@@ -50,7 +50,7 @@ Prices are in **major units**. `XOF` / `XAF` take whole numbers; every other cur
 ## `homeUrl` — the rule
 
 - Absolute, `https`, at most 2048 characters, **no credentials** (`https://user:pass@…` is refused).
-- `http` is accepted **only outside production**. A local `http://localhost:…` URL works in development and fails in production — configure it per environment.
+- `http` is tolerated **only by a non-production Itaja server** — the check runs on Itaja's side and depends on how that server runs, not on where the merchant's app runs. `api.getitaja.com` is production: **always `https`**. For local development against it, expose the app through an `https` tunnel instead of `http://localhost`. Do not rely on `http` working anywhere you did not test.
 - Build it from a **server-side setting** (for example `SHOP_PUBLIC_URL`), never from the incoming `Host` header, a query parameter or the request body. A `homeUrl` assembled from user input is an open redirect.
 - Point it at a stable page of the merchant's own site that can show an order status by looking it up server-side.
 

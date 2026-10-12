@@ -43,7 +43,7 @@ What to do:
 
 **`homeUrl`**
 - [ ] Comes from server configuration, set per environment.
-- [ ] Absolute `https`, ≤ 2048 characters, no credentials. In production a `http://` or `localhost` value is refused.
+- [ ] Absolute `https`, ≤ 2048 characters, no credentials. Against `api.getitaja.com` a `http://` or `localhost` value is refused.
 - [ ] Never derived from the request (`Host`, `Origin`, query, body).
 
 **Checkout**

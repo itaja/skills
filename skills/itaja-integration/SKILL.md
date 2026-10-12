@@ -11,12 +11,18 @@ Itaja lets a merchant take payments through a hosted checkout and a developer AP
 
 | The merchant wants to… | Load |
 |---|---|
+| Create or read products, understand the four monetization modes | `itaja-products` |
 | Sell a cart / one-off order from their own code | `itaja-checkout-session` |
 | Know that a payment succeeded and deliver the goods | `itaja-webhooks` |
+| Look up or create customers, send buyers to the portal | `itaja-customers` |
 | Sell prepaid coins and spend them per use | `itaja-credits` |
+| Sell and verify software licences | `itaja-licenses` |
+| Offer recurring plans (and know the current limits) | `itaja-subscriptions` |
 | Move from sandbox to real money, or review an integration | `itaja-go-live` |
 
 Payment links, subscription plans, credit offers (coin, packs) and webhook endpoints are created **in the merchant dashboard**, not through this API. Do not look for a route that creates them.
+
+Questions that do not fit a skill: `docs/FAQ.md`.
 
 ## Environments
 
@@ -53,7 +59,7 @@ Success: `{ "success": true, "data": … }`. Failure: `{ "success": false, "erro
 
 1. **Server-side only.** The API key and the webhook secret never reach a browser, a mobile bundle, a repository, a log line or a chat. Read them from the environment or a secret manager; `.env` stays git-ignored. If a key is missing, ask the merchant to set it — never ask them to paste it to you.
 2. **Sandbox first.** Build and test with an `itjs_` key. Do not use a live key to test.
-3. **`homeUrl` is strict.** Absolute `https` URL, at most 2048 characters, no `user:pass@`. `http` is accepted outside production only. It comes from the merchant's server configuration — never from the request's `Host` header, query string or body. Details in `itaja-checkout-session`.
+3. **`homeUrl` is strict.** Absolute `https` URL, at most 2048 characters, no `user:pass@`. Whether `http` is tolerated depends on the **Itaja server** being non-production, not on the merchant's environment: against `api.getitaja.com` it is always refused. It comes from the merchant's server configuration — never from the request's `Host` header, query string or body. Details in `itaja-checkout-session`.
 4. **Only the signed webhook proves a payment.** A return page, a redirect or any query parameter on it is payer-visible and forgeable. Never fulfil from them. See `itaja-webhooks`.
 5. **Idempotency is not optional.** Every creation carries a stable `reference`; every money-moving call a stable `idempotencyKey`.
 6. **Itaja prices the sale.** Read `subtotal`, `platformFee` and `total` from the response. Never recompute the commission.

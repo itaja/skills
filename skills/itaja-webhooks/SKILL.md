@@ -85,13 +85,21 @@ Order of operations in the handler:
 
 All share the envelope; `data` always carries `productId`. Fields beyond that depend on the topic — read the OpenAPI document / API reference rather than guessing.
 
+**Delivered today** (the platform really emits these):
+
 | Family | Topics |
 |---|---|
 | Payment | `checkout.paid` |
 | Licences | `license.issued`, `.activated`, `.deactivated`, `.revoked`, `.expired`, `.rotated`, `.suspended`, `.resumed`, `.updated` — keys arrive masked |
 | Credits | `credits.granted`, `.consumed`, `.expired`, `.low`, `.clawed_back` — amounts are **coin counts**, not money |
 
-Subscribe the endpoint only to the topics the integration handles. Ignore unknown `type`s with a `200` so new topics never break a deployed handler.
+**Listed in the dashboard's event picker but not emitted yet:** `payment.*` (`success`, `failed`, `refunded`, `pending`), `subscription.*` (`created`, `updated`, `cancelled`, `renewed`, `payment_failed`) and `client.*` (`created`, `updated`, `deleted`). A subscription to one of them is accepted and **never fires**. Do not build a flow that waits for them: today there is no generic payment-refund, subscription-renewal or failed-payment event (a confirmed refund does surface indirectly — a licence is revoked, so `license.revoked`; a credit pack's coins are taken back, so `credits.clawed_back`). If the integration needs a signal that does not exist, say so to the merchant instead of wiring a handler that stays silent.
+
+Subscribe the endpoint only to the topics the integration handles. Ignore unknown `type`s with a `200` so new topics never break a deployed handler. `endpoint.ping` is the dashboard's test delivery: it is signed like the others and always carries `mode: "sandbox"`.
+
+## Delivery guarantees
+
+Deliveries are published through a hosted webhook transport. The retry schedule is **not documented** to integrators: design for at-least-once delivery, answer fast, and rely on the event id for deduplication rather than on any assumed retry count. If an event was missed, reconcile from the API (a customer's invoices or status, a licence's state) rather than waiting for a redelivery.
 
 ## Done when
 
