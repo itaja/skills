@@ -4,7 +4,7 @@ description: Builds a small, tested Itaja adapter that wraps the developer API w
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Building an Itaja adapter

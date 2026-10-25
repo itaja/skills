@@ -4,7 +4,7 @@ description: Sells software licence keys through Itaja — issuing and managing 
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja licences

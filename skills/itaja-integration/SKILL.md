@@ -4,7 +4,7 @@ description: Entry point for integrating Itaja payments (merchant of record for 
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja integration — start here

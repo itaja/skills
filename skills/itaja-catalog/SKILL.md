@@ -4,7 +4,7 @@ description: Declares an Itaja catalogue in code — features, subscription plan
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Declaring the catalogue in code

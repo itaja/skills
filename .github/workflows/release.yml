@@ -1,0 +1,71 @@
+# Releases are cut from Conventional Commits on main by release-please:
+#
+# 1. every push to main updates one release pull request — next version (SemVer from
+#    feat / fix / feat!), CHANGELOG.md, and `metadata.version` in every SKILL.md;
+# 2. merging that pull request tags `vX.Y.Z` and publishes the GitHub release, with an
+#    archive of the skills attached.
+#
+# Nothing is tagged by hand. The checks of ci.yml run first; a red check stops the release.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release-please:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write # release-please labels its pull request
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  assets:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+          persist-credentials: false
+
+      - name: Archive the skills
+        env:
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: |
+          name="itaja-skills-${TAG}"
+          git archive --format=tar.gz --prefix="${name}/" -o "${name}.tar.gz" "$TAG" skills README.md LICENSE CHANGELOG.md docs
+          git archive --format=zip --prefix="${name}/" -o "${name}.zip" "$TAG" skills README.md LICENSE CHANGELOG.md docs
+          sha256sum "${name}.tar.gz" "${name}.zip" > "${name}.sha256"
+          cat "${name}.sha256"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh release upload "$TAG" "itaja-skills-${TAG}".* --repo "$GITHUB_REPOSITORY" --clobber

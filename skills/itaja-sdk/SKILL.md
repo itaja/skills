@@ -4,7 +4,7 @@ description: Picks the right official Itaja package for the repository's languag
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja official SDKs

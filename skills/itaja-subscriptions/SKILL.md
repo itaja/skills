@@ -4,7 +4,7 @@ description: Sells recurring plans through Itaja — putting a customer on a pla
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja subscriptions

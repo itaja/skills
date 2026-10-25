@@ -4,7 +4,7 @@ description: Creates, finds and updates Itaja customers through the developer AP
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja customers and the buyer portal

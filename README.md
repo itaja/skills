@@ -64,10 +64,15 @@ The generated OpenAPI document (`https://api.getitaja.com/api/references/json`) 
 
 - A skill states only what the API does. Every claim is checked against the OpenAPI document or the code before it is written; a gap (a topic advertised but not emitted, an SDK helper that throws `NOT_YET_AVAILABLE`) is written down as a gap.
 - Frontmatter follows the [Agent Skills specification](https://agentskills.io/specification): `name` equals the folder (lowercase, hyphens, ≤ 64 chars); `description` (≤ 1024 chars, third person) says what the skill does **and** when to use it; `license` and `metadata.version` are set. Bodies stay well under 500 lines.
-- Validate before every change: `uvx --from skills-ref agentskills validate skills/<name>` for each skill, and `npx -y skills add . --list` must list all of them.
+- Validate before every change: `uvx --from skills-ref agentskills validate skills/<name>` for each skill, `python3 scripts/check.py` (versions, references, links, leaks), and `npx -y skills add . --list` must list all of them. CI runs the same three on every pull request.
+- Never edit `metadata.version` or `CHANGELOG.md` by hand, and never push a tag: the release workflow owns them. A new skill is added to `extra-files` in `release-please-config.json` (`scripts/check.py` fails otherwise).
 - No secret, no internal hostname, no private path, no internal vendor or issue number.
 - Code samples must run: the webhook verifier in `itaja-webhooks` is checked against Itaja's published signature vectors plus rotated, tampered, stale and malformed inputs.
 - Conventional Commits; one change per pull request.
+
+## Releases
+
+Versions follow [SemVer](https://semver.org) and are cut by GitHub Actions from [Conventional Commits](https://www.conventionalcommits.org) on `main` ([release-please](https://github.com/googleapis/release-please)): `fix:` → patch, `feat:` → minor, `feat!:` or `BREAKING CHANGE:` → major. Each push to `main` updates a release pull request; merging it tags `vX.Y.Z`, writes `CHANGELOG.md` and publishes the [GitHub release](https://github.com/itaja/skills/releases) with an archive of the skills. Every `SKILL.md` carries the release version in `metadata.version`.
 
 ## License
 

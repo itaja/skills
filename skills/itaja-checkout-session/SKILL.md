@@ -4,7 +4,7 @@ description: Starts an Itaja payment for a cart or one-off order priced by the m
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Create a checkout session

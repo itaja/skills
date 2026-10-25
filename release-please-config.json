@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "initial-version": "1.0.0",
+  "changelog-sections": [
+    {
+      "type": "feat",
+      "section": "Features"
+    },
+    {
+      "type": "fix",
+      "section": "Fixes"
+    },
+    {
+      "type": "docs",
+      "section": "Documentation"
+    },
+    {
+      "type": "perf",
+      "section": "Performance",
+      "hidden": true
+    },
+    {
+      "type": "chore",
+      "section": "Maintenance",
+      "hidden": true
+    },
+    {
+      "type": "ci",
+      "section": "CI",
+      "hidden": true
+    }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "itaja-skills",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "skills/itaja-adapter/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-catalog/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-checkout-session/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-credits/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-customers/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-go-live/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-integration/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-licenses/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-products/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-sdk/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-subscriptions/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "skills/itaja-webhooks/SKILL.md"
+        }
+      ]
+    }
+  }
+}

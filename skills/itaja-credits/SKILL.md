@@ -4,7 +4,7 @@ description: Sells and spends Itaja prepaid credits (coins) — grant, consume, 
 license: MIT
 metadata:
   author: itaja
-  version: "2.0"
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja credits
