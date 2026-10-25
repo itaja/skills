@@ -11,6 +11,7 @@ name: release
 on:
   push:
     branches: [main]
+  workflow_dispatch: # relaunch after a failed run (e.g. a repository setting fixed since)
 
 permissions:
   contents: read
