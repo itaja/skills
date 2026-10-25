@@ -11,6 +11,8 @@ metadata:
 
 `POST /checkout-sessions` prices a **dynamic sale** — the caller's `lineItems` are the sale, no Itaja product behind it — and returns a hosted payment URL. Read `itaja-integration` first.
 
+**Package:** `@itaja/node` `itaja.checkout.create(…)` · Python `itaja.checkout.create(…)` · Laravel `Itaja::checkout()->create(…)` — or `createCheckout()` in an adapter (`itaja-adapter`). Which one: `itaja-sdk`. The body below is the same in every case.
+
 Selling something the catalogue already prices? Use the dedicated route instead: a credit pack (`itaja-credits`), a subscription plan (`itaja-subscriptions`).
 
 ## Preconditions

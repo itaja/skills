@@ -9,7 +9,7 @@ metadata:
 
 # Itaja customers and the buyer portal
 
-Read `itaja-integration` first.
+Read `itaja-integration` first. Package or adapter: `itaja-sdk` (`itaja.customers.create / get / update` accept the merchant's own id).
 
 ## A customer is an e-mail address
 

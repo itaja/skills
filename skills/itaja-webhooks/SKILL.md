@@ -9,7 +9,7 @@ metadata:
 
 # Itaja outbound webhooks
 
-The signed webhook is the **only proof of payment**. Read `itaja-integration` first. With an official SDK the handler below is one line (`itaja-sdk`); this skill is what that line does, and what to write without an SDK.
+The signed webhook is the **only proof of payment**. Read `itaja-integration` first. With an official SDK the handler below is one line (`itaja-sdk`); this skill is what that line does. Without an official package for the stack, build it as part of the adapter (`itaja-adapter`) and prove it against Itaja's published signature vectors.
 
 ## Registering the endpoint (a human step)
 

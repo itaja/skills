@@ -13,14 +13,24 @@ npx skills add itaja/skills                          # all skills
 npx skills add itaja/skills --skill itaja-webhooks   # one skill
 ```
 
-Start with `itaja-integration`: it is the entry point and routes the agent to the right skill.
+Start with `itaja-integration`: it is the entry point and routes the agent to the right skill. The agent then reads the repository's manifests (`package.json`, `pyproject.toml`, `composer.json`, `go.mod`…) to choose the official package for the stack, or builds a small adapter tested against Itaja's published conformance vectors when no package exists.
+
+## Packages
+
+| Stack | Package | Install |
+|---|---|---|
+| Node ≥ 20, Bun, Deno, Workers | [`@itaja/node`](https://www.npmjs.com/package/@itaja/node) | `npm i @itaja/node` |
+| Python ≥ 3.10 (Django, FastAPI, Flask) | [`itaja`](https://pypi.org/project/itaja/) | `pip install itaja` |
+| Laravel 12–13, PHP ≥ 8.2 | [`itaja/itaja-laravel`](https://packagist.org/packages/itaja/itaja-laravel) | `composer require itaja/itaja-laravel` |
+| Anything else | an adapter in the merchant's repo | `itaja-adapter` skill; contract files in [`itaja/itaja-sdks/spec`](https://github.com/itaja/itaja-sdks/tree/main/spec) |
 
 ## Skills
 
 | Skill | Use it to |
 |---|---|
 | [`itaja-integration`](skills/itaja-integration/SKILL.md) | **Start here.** Base URL, keys, sandbox vs live, idempotency, the non-negotiable constraints |
-| [`itaja-sdk`](skills/itaja-sdk/SKILL.md) | Use the official SDKs — `@itaja/node`, `itaja` (Python), `itaja/itaja-laravel` |
+| [`itaja-sdk`](skills/itaja-sdk/SKILL.md) | Pick the right package for the repo's language — `@itaja/node`, `itaja` (Python), `itaja/itaja-laravel` |
+| [`itaja-adapter`](skills/itaja-adapter/SKILL.md) | Build and test a small API wrapper for a language without a package (Go, Ruby, Java, C#, Rust…) |
 | [`itaja-catalog`](skills/itaja-catalog/SKILL.md) | Declare plans, credit packs and licences in code and push them |
 | [`itaja-products`](skills/itaja-products/SKILL.md) | Create and read products by hand; monetization modes; price bounds |
 | [`itaja-checkout-session`](skills/itaja-checkout-session/SKILL.md) | Take a one-off payment for a cart; quote fees beforehand |

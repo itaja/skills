@@ -9,7 +9,7 @@ metadata:
 
 # Itaja subscriptions
 
-Read `itaja-integration` first. Plans are declared in code (`itaja-catalog`) or in the dashboard. The developer API moves customers between plans and manages their subscriptions.
+Read `itaja-integration` first. Package or adapter: `itaja-sdk` (in SDK 0.3.0, call `subscribe` through `request()`). Plans are declared in code (`itaja-catalog`) or in the dashboard. The developer API moves customers between plans and manages their subscriptions.
 
 ## The model
 

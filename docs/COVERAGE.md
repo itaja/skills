@@ -32,6 +32,8 @@ What the skills cover, where each part of Itaja lives, and what is **not** avail
 
 In 0.3.0, `subscribe()`, `check()` and `report()` throw `NOT_YET_AVAILABLE`; call `POST /subscriptions/subscribe` through the SDK's `request()` (`itaja-sdk`).
 
+No official package for Go, Ruby, Java/Kotlin, C#, Rust, Elixir, Dart (server), plain PHP or older runtimes: the `itaja-adapter` skill builds a wrapper in the merchant's repository and proves it against `spec/signature-vectors.json` of `itaja/itaja-sdks` (reference implementation in plain PHP shipped with the skill).
+
 ## Webhook topics
 
 | Delivered | Advertised in the picker, **never emitted** |

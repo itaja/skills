@@ -62,7 +62,13 @@ It lists the products of the **key's mode only**. Use a live key to see live pro
 ## SDKs and catalogue
 
 **Which SDK for which stack?**
-Node/TypeScript (Next.js, Express, Hono, Workers): `@itaja/node`. Python (Django, FastAPI, Flask): `itaja`. Laravel: `itaja/itaja-laravel`. Anything else: HTTP. See `itaja-sdk`.
+Read the server code's manifest. Node ≥ 20 / Bun / Deno / Workers: `@itaja/node`. Python ≥ 3.10 (Django, FastAPI, Flask): `itaja`. Laravel 12–13 on PHP ≥ 8.2: `itaja/itaja-laravel`. Anything else: an adapter (`itaja-adapter`). See `itaja-sdk`.
+
+**My backend is in Go (Ruby, Java, C#, Rust…). What now?**
+Build a small adapter in your repository following `itaja-adapter`: auth header, `Idempotency-Key` on writes, bounded retries, typed errors, webhook verification. Prove it with the published vectors (`https://github.com/itaja/itaja-sdks/tree/main/spec`). A plain-PHP reference implementation ships with the skill.
+
+**My monorepo has a JavaScript front end and a Python API. Which package?**
+The one for the service that holds the key — `itaja` in the API. The front end gets no package.
 
 **Can the SDK run in the browser or a mobile app?**
 No. It holds the secret key. Only the merchant's server imports it.

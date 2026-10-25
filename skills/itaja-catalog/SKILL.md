@@ -9,7 +9,7 @@ metadata:
 
 # Declaring the catalogue in code
 
-`PUT /catalog` sends the whole catalogue the merchant declares in code; Itaja makes its own match it — creating, versioning and archiving. Read `itaja-integration` first. With an SDK, declare it in the config file and run its push command (`itaja-sdk`); this skill is the contract underneath.
+`PUT /catalog` sends the whole catalogue the merchant declares in code; Itaja makes its own match it — creating, versioning and archiving. Read `itaja-integration` first. With an SDK, declare it in the config file and run its push command (`itaja-sdk`); this skill is the contract underneath. In a stack without a package, keep the document as `itaja-catalog.json` in the repo and push it with a small script or CI step calling `PUT /catalog` (`itaja-adapter`).
 
 ## The document
 

@@ -9,7 +9,7 @@ metadata:
 
 # Itaja licences
 
-A `LICENSE` product issues keys shaped `ITJ-XXXX-XXXX-XXXX`. Read `itaja-integration` first. Two audiences, two kinds of route — keep them apart.
+A `LICENSE` product issues keys shaped `ITJ-XXXX-XXXX-XXXX`. Read `itaja-integration` first. Server side, use the package `itaja-sdk` picks (`itaja.licenses.issue / revoke / rotate / resend…`) or an adapter (`itaja-adapter`); the shipped app never uses either. Two audiences, two kinds of route — keep them apart.
 
 | | Who calls | Credential |
 |---|---|---|

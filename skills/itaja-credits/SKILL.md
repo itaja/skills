@@ -11,6 +11,8 @@ metadata:
 
 A `CREDITS` product holds one **wallet** of coins per customer. Coins are a prepaid service unit, **not money**, and a wallet belongs to one product: balances of two products are never summed. Read `itaja-integration` first.
 
+**Package:** `@itaja/node` `itaja.credits.consume / grant / balance / walletToken / buy` (Python and Laravel expose the same calls) — or the adapter's own functions (`itaja-adapter`). Which one: `itaja-sdk`.
+
 The offer (the coin's name, the packs, credit subscription plans) is declared in code with `PUT /catalog` (`itaja-catalog`) or configured in the dashboard. The routes below sell packs and move coins.
 
 ## Routes (developer API, API key)

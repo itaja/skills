@@ -13,9 +13,12 @@ Itaja lets a merchant sell one-off orders, subscriptions, prepaid credits and so
 
 ## Pick the next skill
 
+**First, always: `itaja-sdk`** — it reads the repository's manifests and picks the official package for the stack (`@itaja/node`, `itaja` for Python, `itaja/itaja-laravel`), or sends you to `itaja-adapter` to build a small tested wrapper when no package fits the language. Then:
+
 | The merchant wants to… | Load |
 |---|---|
-| Use an official SDK (Node, Python, Laravel) instead of raw HTTP | `itaja-sdk` |
+| Choose and install the right package for this repo | `itaja-sdk` |
+| Wrap the API in a language without an official package | `itaja-adapter` |
 | Declare what they sell in code and push it (plans, packs, licences) | `itaja-catalog` |
 | Create or read products by hand; the monetization modes | `itaja-products` |
 | Sell a cart or one-off order priced by their own code; quote fees | `itaja-checkout-session` |
