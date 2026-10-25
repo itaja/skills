@@ -1,19 +1,24 @@
 ---
 name: itaja-webhooks
-description: Use when a merchant must receive and trust Itaja events (checkout.paid, license.*, credits.*) — signature verification, replay and duplicate handling, and fulfilling an order only on live, verified payments.
+description: Receives and trusts Itaja outbound webhooks (checkout.paid, invoice.*, subscription.past_due, subscription.canceled, license.*, credits.*) — signature verification on the raw body, replay windows, deduplication, sandbox vs live, and fulfilling an order exactly once. Use when a merchant's server must react to Itaja payment or lifecycle events.
+license: MIT
+metadata:
+  author: itaja
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja outbound webhooks
 
-The signed webhook is the **only proof of payment**. Read `itaja-integration` first.
+The signed webhook is the **only proof of payment**. Read `itaja-integration` first. With an official SDK the handler below is one line (`itaja-sdk`); this skill is what that line does. Without an official package for the stack, build it as part of the adapter (`itaja-adapter`) and prove it against Itaja's published signature vectors.
 
 ## Registering the endpoint (a human step)
 
-Endpoints are created in the merchant **dashboard**, not through the API key.
+Endpoints are created in the merchant **dashboard**, not with the API key.
 
-- The URL must be public `https`: no cleartext, no loopback, private or link-local address (`INVALID_URL` otherwise). A local server needs a tunnel.
-- The signing secret (`whsec_…`) is shown **once**, at creation. Have the merchant store it as `ITAJA_WEBHOOK_SECRET` in a secret manager. If it is lost or leaked, create a new endpoint / rotate — do not look for a way to read it back.
-- Use one endpoint per environment, each with its own secret.
+- The URL must be public `https`: no cleartext, loopback, private or link-local address. A local server needs an `https` tunnel.
+- The signing secret (`whsec_…`) is shown **once**, at creation. The merchant stores it as `ITAJA_WEBHOOK_SECRET` in a secret manager. Lost or leaked: rotate or create a new endpoint — it cannot be read back.
+- One endpoint and one secret per environment.
+- Subscribe only to the topics the integration handles.
 
 ## Verifying a delivery
 
@@ -22,7 +27,7 @@ Every delivery carries:
 - `x-itaja-timestamp` — unix seconds.
 - `x-itaja-signature` — `v1,<base64>`. During a secret rotation it carries one signature per valid secret: `v1,<current>,<previous>`.
 
-The signature is `HMAC-SHA256(key = the raw secret string, message = "<timestamp>.<raw body>")`, base64-encoded. The key is the secret **as given**, `whsec_` prefix included — not decoded.
+The signature is `HMAC-SHA256(key = the secret string as issued, message = "<timestamp>.<raw body>")`, base64. The key keeps its `whsec_` prefix and is not decoded. This is **not** the Standard Webhooks scheme: a Standard Webhooks library will not verify it.
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -33,14 +38,15 @@ export function verifyItajaSignature(
   timestampHeader: string | null,
   secret: string,
   toleranceSeconds = 300,
+  nowSeconds = Date.now() / 1000,
 ): boolean {
   if (!signatureHeader || !timestampHeader) return false;
   const ts = Number(timestampHeader);
   if (!Number.isInteger(ts)) return false;
-  if (Math.abs(Date.now() / 1000 - ts) > toleranceSeconds) return false;
+  if (Math.abs(nowSeconds - ts) > toleranceSeconds) return false;
 
   const expected = createHmac("sha256", secret)
-    .update(`${timestampHeader}.${rawBody}`)
+    .update(`${timestampHeader}.${rawBody}`, "utf8")
     .digest();
 
   const [version, ...candidates] = signatureHeader.split(",");
@@ -54,57 +60,56 @@ export function verifyItajaSignature(
 
 Rules that bite:
 
-1. **Verify the raw bytes.** Frameworks that parse JSON first (`express.json()`, body parsers) change the bytes. Capture the raw body for this route.
+1. **Verify the raw bytes.** Body parsers (`express.json()`, framework JSON middleware) change them. Read the raw body on this route.
 2. **Constant-time compare** (`timingSafeEqual`), never `===`.
-3. **Check the timestamp window.** The signature covers the timestamp, so a replay is detectable — enforcing the window is the receiver's job.
-4. **Reject on any failure with `400`** and process nothing. Do not log the secret or the full signature header.
+3. **Enforce the timestamp window.** The signature covers the timestamp; rejecting old ones is the receiver's job.
+4. **Compare against every signature** in the header, not only the first.
+5. **Reject any failure with `400`** and process nothing. Never log the secret or the signature header.
 
 ## Handling an event
-
-Envelope:
 
 ```json
 { "id": "itaja_evt_…", "type": "checkout.paid", "apiVersion": "v1", "mode": "live",
   "createdAt": "…",
   "data": { "checkoutId": "…", "productId": null, "transactionId": "…",
-            "amount": 5400, "currency": "XOF", "paidAt": "…" } }
+            "amount": 5500, "currency": "XOF", "paidAt": "…" } }
 ```
 
-Order of operations in the handler:
+In the handler, in this order:
 
-1. Verify the signature (above). Fail → `400`.
-2. **Deduplicate on `id`.** Insert the event id in a table with a unique constraint *in the same transaction* as the fulfilment. A duplicate returns `200` and does nothing. Design for at-least-once and out-of-order delivery.
-3. **Check `mode`.** In production, fulfil only `"live"`. A `"sandbox"` event gets a `200` and a log line, nothing else. (The dashboard's ping and sample deliveries are always `"sandbox"`.)
-4. **Correlate.** Find your order by `data.checkoutId` — the `data.id` you stored when you created the session (`itaja-checkout-session`). Unknown id → `200`, log, alert; do not invent an order.
-5. **Cross-check** `amount` and `currency` against the `total` and `currency` you stored. A mismatch is an incident, not a fulfilment.
-6. Mark paid / deliver, then answer `2xx` quickly. Do slow work (e-mails, provisioning) asynchronously.
+1. Verify the signature. Fail → `400`.
+2. **Deduplicate on `id`.** Insert the event id under a unique constraint *in the same transaction* as the fulfilment. A duplicate answers `200` and does nothing. Delivery is at-least-once and unordered.
+3. **Check the environment.** `checkout.paid`, `invoice.*` and `subscription.*` carry `mode`: production fulfils only `"live"`, and answers `200` + a log line to `"sandbox"`. `license.*` and `credits.*` envelopes carry **no** `mode`: tell the environment by `data.productId`, which is different for sandbox and live products.
+4. **Correlate.** For `checkout.paid`, find the order by `data.checkoutId` — the `data.id` stored at checkout creation (`itaja-checkout-session`). Unknown → `200`, log, alert; never invent an order.
+5. **Cross-check** `amount` and `currency` against the stored `total` and `currency`. A mismatch is an incident, not a fulfilment.
+6. Fulfil, then answer `2xx` fast; do slow work asynchronously. If the fulfilment itself fails, answer `5xx`: a non-`2xx` answer is redelivered.
 
-`productId` is `null` for a dynamic checkout — it has no product.
+`data.productId` is `null` on a dynamic checkout (no product). `data.amount` on `checkout.paid` and `invoice.*` is money in major units.
 
-## Other event families
+## Topics actually delivered
 
-All share the envelope; `data` always carries `productId`. Fields beyond that depend on the topic — read the OpenAPI document / API reference rather than guessing.
+| Family | Topics | Notes |
+|---|---|---|
+| Payment | `checkout.paid` | every paid checkout: dynamic, credit pack, subscription period |
+| Subscription billing | `invoice.paid`, `invoice.payment_failed`, `subscription.past_due`, `subscription.canceled` | see `itaja-subscriptions` |
+| Licences | `license.issued`, `.activated`, `.deactivated`, `.revoked`, `.expired`, `.rotated`, `.suspended`, `.resumed`, `.updated` | keys arrive **masked**; devices only as `deviceFingerprintHash` |
+| Credits | `credits.granted`, `.consumed`, `.expired`, `.low`, `.clawed_back` | amounts are **coin counts**, never money |
 
-**Delivered today** (the platform really emits these):
+`data` always carries `productId`. Other fields depend on the topic: read the OpenAPI document or the topic's skill rather than guessing. `subscription.canceled` is spelled with **one l**.
 
-| Family | Topics |
-|---|---|
-| Payment | `checkout.paid` |
-| Licences | `license.issued`, `.activated`, `.deactivated`, `.revoked`, `.expired`, `.rotated`, `.suspended`, `.resumed`, `.updated` — keys arrive masked |
-| Credits | `credits.granted`, `.consumed`, `.expired`, `.low`, `.clawed_back` — amounts are **coin counts**, not money |
+**Listed in the dashboard picker but never emitted:** `payment.*`, `client.*`, `subscription.created`, `.updated`, `.renewed`, `.payment_failed`. A subscription to them is accepted and never fires. Do not wire a handler that waits for them; there is no generic payment-refund event (a refund surfaces as `license.revoked` or `credits.clawed_back`). If the integration needs a signal that does not exist, tell the merchant.
 
-**Listed in the dashboard's event picker but not emitted yet:** `payment.*` (`success`, `failed`, `refunded`, `pending`), `subscription.*` (`created`, `updated`, `cancelled`, `renewed`, `payment_failed`) and `client.*` (`created`, `updated`, `deleted`). A subscription to one of them is accepted and **never fires**. Do not build a flow that waits for them: today there is no generic payment-refund, subscription-renewal or failed-payment event (a confirmed refund does surface indirectly — a licence is revoked, so `license.revoked`; a credit pack's coins are taken back, so `credits.clawed_back`). If the integration needs a signal that does not exist, say so to the merchant instead of wiring a handler that stays silent.
-
-Subscribe the endpoint only to the topics the integration handles. Ignore unknown `type`s with a `200` so new topics never break a deployed handler. `endpoint.ping` is the dashboard's test delivery: it is signed like the others and always carries `mode: "sandbox"`.
+Ignore unknown `type`s with a `200`, so a new topic never breaks a deployed handler. `endpoint.ping` is the dashboard's test delivery: signed like the others, always `mode: "sandbox"`.
 
 ## Delivery guarantees
 
-Deliveries are published through a hosted webhook transport. The retry schedule is **not documented** to integrators: design for at-least-once delivery, answer fast, and rely on the event id for deduplication rather than on any assumed retry count. If an event was missed, reconcile from the API (a customer's invoices or status, a licence's state) rather than waiting for a redelivery.
+At-least-once, unordered, redelivered on a non-`2xx` answer. The retry schedule and the source IPs are not documented: rely on the signature (no IP allowlist), on the event id for deduplication, and on reconciliation from the API (`GET /subscriptions/:id`, a licence, a wallet) if an event seems missing.
 
 ## Done when
 
-- [ ] Raw body is verified with a constant-time compare and a timestamp window.
+- [ ] The raw body is verified, constant-time, every signature of the header, with a timestamp window.
 - [ ] Event ids are deduplicated atomically with the fulfilment.
-- [ ] Production ignores `mode: "sandbox"`.
-- [ ] Orders are matched by the stored checkout `id`, and the amount is cross-checked.
+- [ ] Production ignores sandbox events (`mode`, or the product id where `mode` is absent).
+- [ ] Orders are matched by the stored checkout id and the amount is cross-checked.
+- [ ] No handler waits on a topic that is not emitted.
 - [ ] The secret lives in a secret manager, one per environment.

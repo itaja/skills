@@ -1,72 +1,87 @@
 ---
 name: itaja-credits
-description: Use when a merchant sells prepaid coins (credits) and spends them per use through Itaja — granting, consuming, reading balances, selling credit packs and letting a browser read a wallet safely.
+description: Sells and spends Itaja prepaid credits (coins) — grant, consume, expire, read wallets and balances, sell credit packs, and let a browser or app spend a wallet with a short-lived token instead of the API key. Use when a merchant bills usage (AI tokens, messages, exports) with prepaid coins through Itaja.
+license: MIT
+metadata:
+  author: itaja
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja credits
 
-A `CREDITS` product holds **wallets** of coins per customer. Coins are a prepaid service unit, **not money**. Read `itaja-integration` first.
+A `CREDITS` product holds one **wallet** of coins per customer. Coins are a prepaid service unit, **not money**, and a wallet belongs to one product: balances of two products are never summed. Read `itaja-integration` first.
 
-The offer itself (the coin's name, its form, the packs) is created in the **dashboard**. The API lists packs, sells them, and moves coins.
+**Package:** `@itaja/node` `itaja.credits.consume / grant / balance / walletToken / buy` (Python and Laravel expose the same calls) — or the adapter's own functions (`itaja-adapter`). Which one: `itaja-sdk`.
 
-## Routes (developer API, key required)
+The offer (the coin's name, the packs, credit subscription plans) is declared in code with `PUT /catalog` (`itaja-catalog`) or configured in the dashboard. The routes below sell packs and move coins.
+
+## Routes (developer API, API key)
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/v1/products/:productId/credits/grant` | Give coins to a customer |
-| `POST` | `/api/v1/products/:productId/credits/consume` | Spend coins |
-| `GET` | `/api/v1/products/:productId/credits/:customerId` | Wallet + journal |
-| `GET` | `/api/v1/products/:productId/credits/:customerId/balance` | Balance only |
-| `POST` | `/api/v1/products/:productId/credits/:customerId/wallet-token` | 15-minute token for a browser |
-| `GET` | `/api/v1/products/:productId/credit-packs` | Active packs |
-| `POST` | `/api/v1/products/:productId/credit-packs/:packId/checkout` | Start a checkout from a pack |
+| `POST` | `/products/:productId/credits/grant` | Give coins (gift, compensation, sale made elsewhere) |
+| `POST` | `/products/:productId/credits/consume` | Spend coins |
+| `POST` | `/products/:productId/credits/expire` | Burn one customer's expired coins |
+| `POST` | `/products/:productId/credits/expire-due` | Burn every customer's expired coins (Itaja already runs it daily) |
+| `GET` | `/products/:productId/credits/:customerId` | Wallet + journal |
+| `GET` | `/products/:productId/credits/:customerId/balance` | The number only; `0` for a customer who never bought |
+| `POST` | `/products/:productId/credits/:customerId/wallet-token` | 15-minute token for the buyer's browser or app |
+| `GET` | `/products/:productId/credit-packs` | Active packs (with their `catalogKey`) |
+| `POST` | `/products/:productId/credit-packs/:packId/checkout` | Sell one pack |
 
-The product must be in `CREDITS` mode (`409 MONETIZATION_MODE_MISMATCH` otherwise) and of the key's mode (`422 MODE_MISMATCH`).
+`customerId` is Itaja's id or the merchant's own (`itaja-customers`). The product must be `CREDITS` (`409 MONETIZATION_MODE_MISMATCH`) and of the key's mode (`422 MODE_MISMATCH`).
 
 ## Grant and consume
 
 ```json
-{ "customerId": "cus_…", "amount": 50, "idempotencyKey": "order-1042-consume", "reason": "export-report" }
+{ "customerId": "user_123", "amount": 50, "idempotencyKey": "job-8841-consume", "reason": "export-report" }
 ```
 
-- `amount` is a positive **integer**.
-- `idempotencyKey` is **required, at least 8 characters**, and must be stable per business event (an order id, a job id). A replay returns `replayed: true` and moves nothing a second time. A random key per attempt defeats it.
-- Response: `data.wallet` (`balance`, `currency`, …), `data.transaction`, `data.replayed`, `data.lowBalance`.
-- `409 INSUFFICIENT_CREDITS` on a consume the wallet cannot cover — show it to the user; do not retry.
-- `grant` also accepts optional `expiresAt` (applied only when the wallet is created) and `lowBalanceThreshold`.
+- `amount`: positive **integer**, at most 1,000,000,000 per movement.
+- `idempotencyKey`: **required, ≥ 8 characters**, stable per business event (job id, order id), unique **per wallet**. A replay answers `replayed: true` and moves nothing; the same key with another amount or type is `409 IDEMPOTENCY_KEY_REUSED`.
+- Response: `data.wallet` (`balance`, `currency`, `expiresAt`, `lowBalanceThreshold`), `data.transaction`, `data.replayed`, `data.lowBalance`.
+- `409 INSUFFICIENT_CREDITS`: the wallet cannot cover the consume. Show it; do not retry.
+- `grant` only reaches a customer of the product's account (`422 CUSTOMER_NOT_IN_ACCOUNT`).
+- `grant` accepts `expiresAt` (future date, else `422 INVALID_DATE`) — it dates **that grant's coins only** — and `lowBalanceThreshold`.
 
-**Coins are not refundable.** There is no refund route. To make a customer whole, `grant` coins again — the journal tells the two apart.
+Expired coins are never spendable: any movement first burns the coins whose date has passed. A debit takes the coins that expire first.
+
+**Coins are not refundable.** There is no refund route. To make a customer whole, `grant` again — the journal tells the two apart. A refunded pack sale takes back what remains of its coins automatically (`credits.clawed_back`).
 
 ## Selling a pack
 
 ```json
-{ "customerId": "cus_…", "homeUrl": "https://app.example/credits/merci",
-  "customer": { "email": "acheteur@example.com" }, "reference": "pack-order-77", "language": "fr" }
+{ "customerId": "user_123", "homeUrl": "https://app.example/credits",
+  "successUrl": "https://app.example/credits/merci", "reference": "pack-order-77", "language": "fr" }
 ```
 
-- A **pack is the offer**: price and currency come from it. A body carrying `amount` or `quantity` is a `422`. To sell more, sell a bigger pack or another sale.
-- `homeUrl` follows the strict rule in `itaja-checkout-session` (absolute `https`, no credentials, from server config).
-- `customer.email` is required (`422 CUSTOMER_EMAIL_REQUIRED`); `customerId` must be reachable from the product's account (`422 CUSTOMER_NOT_FOUND`).
-- Store the returned checkout `id` with your order, redirect to `checkoutUrl`, and fulfil from the webhook only.
-- Coins are credited **once**, when payment is confirmed, and the amount is frozen at checkout creation — editing the pack later does not change what a pending sale delivers. The delivery shows up as `credits.granted` with `idempotencyKey` = `checkout:<checkoutId>` (see `itaja-webhooks`). Do not also grant manually for the same sale.
+- Allowed keys: `customerId` (required), `homeUrl` (required), `successUrl`, `failureUrl`, `cancelUrl`, `reference`, `language`. **Any other key is `422 VALIDATION`** — no `amount`, no `quantity`, no `customer` object: the buyer's e-mail is read from the customer record.
+- A **pack is the offer and the unit of sale**: price, currency and coins come from it. To sell more, sell a bigger pack.
+- Return URLs follow the rule of `itaja-checkout-session`: absolute `https`, from server config, and in live on a **verified domain** (`422 LIVE_HOST_NOT_ALLOWED`).
+- An unknown customer for this product is `422 CUSTOMER_NOT_FOUND`.
+- Store the returned checkout `id`, redirect to `checkoutUrl`, fulfil from the webhook.
+- Coins are credited **once**, when the payment is confirmed; price and coins are frozen at checkout creation. The delivery appears as `credits.granted` with `idempotencyKey = checkout:<checkoutId>`. **Do not grant manually for the same sale.**
 
-## Letting a browser read or spend a wallet
+## Letting a browser or app spend a wallet
 
-Never put the API key in a browser. Instead, your server calls `…/wallet-token` and hands the customer the **15-minute token**. The browser then uses the key-less routes:
+Never put the API key in a client. The merchant's server calls `…/wallet-token` and hands the **15-minute token** to the client, which uses the key-less routes:
 
-- `GET /api/v1/public/credits/wallet?token=…`
-- `POST /api/v1/public/credits/consume` with `{ token, amount, idempotencyKey }`
+- `GET /public/credits/wallet?token=…`
+- `POST /public/credits/consume` with `{ token, amount, idempotencyKey }`
 
-These are limited to 60 requests per minute per IP and per token (`429 RATE_LIMITED`, honour `Retry-After`). Treat the token as a short-lived secret: do not log it or put it in a URL you share.
+60 requests per minute per IP and per token (`429 RATE_LIMITED`, honour `Retry-After`). The token is a bearer credential: never log it or share it in a URL.
 
-## Scope and rate rules
+## Credit subscriptions
 
-- A product-scoped key reaches only its own product (`403 PRODUCT_SCOPE_VIOLATION`).
-- Credit movements publish `credits.*` webhooks asynchronously; a consume never waits on the network.
+A credits product can also sell **plans** that credit coins every paid period. Like every subscription today, renewal is manual: Itaja issues the period invoice 10 days ahead and reminds the buyer by e-mail. See `itaja-subscriptions`.
+
+## Webhooks
+
+`credits.granted`, `.consumed`, `.expired`, `.low` (balance crossed `lowBalanceThreshold`; no e-mail to the buyer), `.clawed_back`. Amounts are coin counts. See `itaja-webhooks`.
 
 ## Done when
 
-- [ ] Every grant/consume carries a stable `idempotencyKey` (≥ 8 chars).
-- [ ] No refund flow exists; corrections are grants.
-- [ ] Pack sales are fulfilled by the webhook, not by the return.
-- [ ] The browser only ever holds a wallet token, never the key.
+- [ ] Every grant and consume carries a stable `idempotencyKey` (≥ 8 chars).
+- [ ] Corrections are grants; no refund flow is invented.
+- [ ] Pack sales send only the allowed keys and are fulfilled by the webhook, not by the return.
+- [ ] A client only ever holds a wallet token, never the key.

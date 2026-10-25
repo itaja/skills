@@ -1,6 +1,10 @@
 ---
 name: itaja-go-live
-description: Use before a merchant's Itaja integration takes real money, or when reviewing an existing one. Explains the sandbox/live split, the account gates, and a pre-production checklist covering keys, homeUrl, webhooks and the production host.
+description: Prepares an Itaja integration for real money and audits existing ones — the sandbox/live split, the account gates (LIVE_MODE_NOT_ALLOWED), verified live domains (LIVE_HOST_NOT_ALLOWED), and a pre-production checklist for keys, return URLs, webhooks, idempotency and the production host. Use before an Itaja integration takes live payments, or when reviewing one.
+license: MIT
+metadata:
+  author: itaja
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Going live with Itaja
@@ -9,64 +13,68 @@ Use this skill to **prepare** the move to real money and to **audit** an integra
 
 ## How the mode works
 
-- The key decides: `itjs_` = **sandbox** (no real charge), anything else = **live**.
-- Products, checkouts and webhook events each carry their mode. A checkout created in sandbox stays `sandbox` forever, even if its product later goes live. A product of the other mode answers `422 MODE_MISMATCH`.
-- Sandbox and live are separate worlds: separate keys, separate products, separate webhook secrets. Plan configuration for both.
+- The key decides: `itjs_` = **sandbox**, `itjp_` = **live**.
+- Products, checkouts, catalogues and subscriptions each carry their mode; a key never reaches the other mode (`422 MODE_MISMATCH`). A sandbox checkout stays sandbox forever.
+- Sandbox and live are separate worlds: separate keys, product ids, catalogue pushes, webhook endpoints and secrets. Configure both.
 
-## The account gates (do not try to bypass them)
+## Gate 1 — the account (`LIVE_MODE_NOT_ALLOWED`)
 
-Creating a live product or a live key is refused until the merchant's account has **all three** of:
+Creating a live product, pushing a live catalogue or creating a live key is refused until the account has **all three** of: account approved, identity verified (KYC/KYB file reviewed by Itaja), onboarding completed. The API answers `403 LIVE_MODE_NOT_ALLOWED` with `details.missing` (`account_approved`, `identity_verified`, `onboarding_completed`); nothing is written.
 
-1. account approved,
-2. identity verified,
-3. onboarding completed.
+- Report `details.missing` to the merchant in plain words and stop. These steps happen in the dashboard and with the Itaja team.
+- Never retry in a loop, relabel a sandbox key, or work around it.
+- Sandbox is never blocked; keep building there.
+- Existing live keys and products keep working: the gate applies to creation.
 
-Until then the API answers `403` with `code: "LIVE_MODE_NOT_ALLOWED"` and `details.missing` listing what is lacking (`account_approved`, `identity_verified`, `onboarding_completed`). Nothing is written. The merchant's dashboard shows the same state.
+## Gate 2 — verified domains (`LIVE_HOST_NOT_ALLOWED`)
 
-What to do:
+In live, a payer is only ever sent back to a host the account has **verified**. Every `homeUrl`, `successUrl`, `failureUrl` and `cancelUrl` of a live checkout or credit-pack sale must be on such a host, or the call is `422 LIVE_HOST_NOT_ALLOWED`, nothing written.
 
-- Report `details.missing` to the merchant in plain words and stop. These steps happen in the dashboard and with the Itaja team; code cannot complete them.
-- Do **not** retry in a loop, create a sandbox key and relabel it, or work around it by any other means.
-- Sandbox work is never blocked by this gate — keep building in sandbox meanwhile.
-- Live keys and products that already exist keep working; the gate applies to creation.
+- The merchant declares each site in the dashboard (Settings → Domains); it is born `PENDING`, and only Itaja moves it to `VERIFIED` or `REJECTED` (with a reason shown in the dashboard).
+- The match is **exact**: `shop.example.com` needs its own entry even if `example.com` is verified.
+- `localhost` and loopback addresses are exempt, so a developer can try live from their machine; production URLs are not.
+- An agent lists the hosts the code uses, tells the merchant which to declare, and waits. It never swaps to another host to pass the check.
 
 ## Pre-production checklist
 
 **Production host**
-- [ ] `ITAJA_API_BASE_URL` is `https://api.getitaja.com`. If that host does not resolve yet, stop and tell the merchant — never send a live key to a different host.
+- [ ] `ITAJA_API_URL` is `https://api.getitaja.com/api/v1` (or unset with an SDK). A live key is never sent elsewhere.
 
 **Secrets**
-- [ ] The live key and the webhook secret are in the production secret manager, not in the repo, the image, the client bundle, the CI logs or an `.env` that is committed.
-- [ ] The sandbox key is not deployed to production, and the live key is not on a developer laptop or in a preview deployment.
-- [ ] Every place that reads the key is server-side. Search the front-end bundle for `itjs_` and the key prefix.
-- [ ] A leaked key is replaced by regenerating it in the dashboard; the old one is dead. Nothing in the code depends on a specific key value.
+- [ ] The live key and webhook secret are in the production secret manager — not in the repo, the image, the client bundle, CI logs, or a committed `.env`.
+- [ ] The sandbox key is not deployed to production; the live key is not on a laptop or a preview deployment.
+- [ ] Every place that reads the key is server-side. Search the built front-end for `itjs_` / `itjp_`.
+- [ ] A leaked key is regenerated in the dashboard; nothing depends on a key's value.
 
-**`homeUrl`**
-- [ ] Comes from server configuration, set per environment.
-- [ ] Absolute `https`, ≤ 2048 characters, no credentials. Against `api.getitaja.com` a `http://` or `localhost` value is refused.
-- [ ] Never derived from the request (`Host`, `Origin`, query, body).
+**Return URLs**
+- [ ] Built from server configuration per environment; never from `Host`, `Origin`, query or body.
+- [ ] Absolute `https`, ≤ 2048 characters, no credentials.
+- [ ] Every production host is declared and **verified** for the account.
 
-**Checkout**
-- [ ] `reference` is stable per order; the returned checkout `id` is stored before the redirect.
-- [ ] The order is never marked paid from the return page or its query parameters.
-- [ ] `429` and `5xx` are retried with the same `reference`, with a cap; `4xx` are not.
+**Catalogue (if used)**
+- [ ] The live push followed a reviewed `?dryRun=true` diff; product ids or names are configured per environment.
+
+**Checkout and subscriptions**
+- [ ] `reference` and `Idempotency-Key` are stable per order; the checkout id is stored before the redirect.
+- [ ] Nothing is fulfilled from a return URL or its query parameters.
+- [ ] `429`, `5xx`, `409 IDEMPOTENCY_KEY_IN_PROGRESS` are retried with the same key and a cap; other `4xx` are not.
+- [ ] A subscription `paymentUrl` is used at once, never cached past `paymentUrlExpiresAt`.
 
 **Webhooks**
-- [ ] A live endpoint is registered in the dashboard with its own secret, on public `https`.
-- [ ] Signature verified on the raw body, constant-time, timestamp window enforced.
-- [ ] Event ids are deduplicated atomically with fulfilment.
-- [ ] Production ignores `mode: "sandbox"` events.
-- [ ] `amount` and `currency` are cross-checked against the stored order.
+- [ ] A live endpoint with its own secret is registered on public `https`, subscribed only to handled topics.
+- [ ] Raw-body signature verification, constant-time, every signature, timestamp window.
+- [ ] Event ids deduplicated atomically with fulfilment (shared store if several instances).
+- [ ] Production ignores sandbox events; `amount` and `currency` are cross-checked.
 
-**Money handling**
-- [ ] Amounts are major units; `XOF`/`XAF` integers, other currencies ≤ 2 decimals.
-- [ ] The UI shows the response's `total`; the commission is never recomputed locally.
-- [ ] `customer.email` is the buyer's real address.
+**Money**
+- [ ] Amounts in major units; XOF/XAF whole, others ≤ 2 decimals.
+- [ ] The UI shows `total` (or a `/quotes` answer); the commission is never recomputed.
+- [ ] `customer.email` is the real buyer's address.
 
 ## The first real payment
 
-Once the gates are open and the checklist is green, **the merchant** makes one small real payment themselves and confirms that the order is fulfilled exactly once. An agent does not trigger live payments, and does not use real customer data for tests.
+Once both gates are open and the checklist is green, **the merchant** makes one small real payment and confirms the order is fulfilled exactly once. An agent never triggers live payments and never uses real customer data in tests.
 
 ## Auditing an existing integration
 
-Walk the checklist against the code, report each failed item with the file and line, and fix only what the merchant asked you to fix. The most common real-world failures, in order: a key reachable from the browser, fulfilment on the return page, a missing or non-atomic duplicate check on webhooks, a `homeUrl` built from the request, and a random `reference` per retry.
+Walk the checklist against the code, report each failed item with file and line, and fix only what the merchant asked. The most frequent findings, in order: a key reachable from the browser; fulfilment on the return page; a missing or non-atomic duplicate check on webhooks; a return URL built from the request or on an unverified host; a random `reference` per retry; a handler waiting on a webhook topic that is never emitted.

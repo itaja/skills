@@ -1,91 +1,107 @@
 ---
 name: itaja-subscriptions
-description: Use when a merchant wants recurring billing through Itaja. States what exists today (plans, first-period checkout, manual renewal and dunning) and what does not (card auto-renewal, subscription API routes, subscription webhooks), so no agent builds on features that are not there.
+description: Sells recurring plans through Itaja — putting a customer on a plan with POST /api/v1/subscriptions/subscribe (new, upgrade, downgrade, cancel to free), listing, pausing, resuming and cancelling subscriptions, free trials, manual renewal and dunning, billing webhooks, and the limits (no card auto-renewal yet, no enforced entitlements). Use when a merchant bills customers every week, month, quarter or year.
+license: MIT
+metadata:
+  author: itaja
+  version: "1.0.0" # x-release-please-version
 ---
 
-# Itaja subscriptions — what is real today
+# Itaja subscriptions
 
-Read `itaja-integration` first. This skill is mostly a map of **limits**, because the most expensive mistake here is building an integration on features that do not exist yet. State of play when this was written; verify against the API reference before relying on a gap having closed.
+Read `itaja-integration` first. Package or adapter: `itaja-sdk` (in SDK 0.3.0, call `subscribe` through `request()`). Plans are declared in code (`itaja-catalog`) or in the dashboard. The developer API moves customers between plans and manages their subscriptions.
 
 ## The model
 
-- A **plan** is the offer: one or more **items** (each with a price), a currency and a cadence. The plan's price is the **sum of its items** — never look for a single price field.
-- A **contract** links one payer to one plan. It carries a status and a current period.
-- An **invoice** documents each period. Itaja's invoice is always the legal one.
-- `interval` is `WEEK`, `MONTH`, `QUARTER` or `YEAR`, with an `intervalCount`.
+- A **plan** is the offer: a price, a currency and a cadence (`week`, `month`, `quarter`, `year`, × `intervalCount`), optional free trial, optional default (free) plan per product.
+- A **subscription** (contract) links one customer to one plan, with a status and a current period. One live subscription per customer and product.
+- An **invoice** documents each period; Itaja's invoice is the legal one.
+- Statuses: `TRIALING`, `ACTIVE`, `PAUSED`, `CANCELED`, `ENDED`.
 
-## What the developer API offers: nothing to create or run subscriptions
+## Putting a customer on a plan — `subscribe`
 
-| Needed | Where it happens |
-|---|---|
-| Create / archive a plan | **Dashboard** |
-| List / pause / resume / cancel contracts | **Dashboard** |
-| Read a customer's subscription summary | `GET /api/v1/customers/:customerId` (`customerSubscription`) |
-| Read a customer's invoices | `GET /api/v1/customers/:customerId/invoices` |
+`POST /subscriptions/subscribe` is the only write a merchant needs. It never creates a paid subscription without a payment.
 
-There is **no** `dev-api` route to create a plan, start a subscription, or cancel one. Do not invent one, and do not call the dashboard's session-authenticated routes with an API key — they will not accept it.
+```json
+{ "customerId": "user_123", "plan": "Pro",
+  "successUrl": "https://app.example/billing/merci", "cancelUrl": "https://app.example/billing" }
+```
 
-## How a subscription starts
+- `customerId`: Itaja's id or the merchant's own (`itaja-customers`).
+- **Exactly one** of `plan` (the name declared in code, compared case-insensitively among plans on sale) or `planId` (Itaja's id; required for a plan made in the dashboard). Both or neither: `422 VALIDATION_ERROR`.
+- `productId`: only when an account-scoped key names a plan sold by several products (`409 AMBIGUOUS_PLAN` otherwise).
+- `successUrl`, `cancelUrl`: absolute `https` URLs of the merchant's site where the pay page sends the payer back; build them from server configuration, never from the request.
+- The product needs an active pay page (link) to take the payment; a product without one refuses with `409 INVALID_CONTRACT_TRANSITION`.
+- Send an `Idempotency-Key`.
 
-The product's **share link** sells the first period:
+Response: `data.outcome`, `data.subscription`, `data.paymentUrl`, `data.paymentUrlExpiresAt`, `data.scheduledChange`, `data.onDefaultPlan`, `data.plan` (`{ id, name, productId }`).
 
-1. The merchant creates a `SUBSCRIPTION` product and its plans in the dashboard.
-2. The buyer opens the share link, picks a plan (only **active** plans with at least one item are listed) and pays the first period at the hosted checkout.
-3. On the signed payment confirmation — and only then — the contract is born: `ACTIVE`, period starting at the payment, first invoice already `PAID`.
+| The customer… | Target | `outcome` | What to do |
+|---|---|---|---|
+| has no live subscription | a paid plan | `payment_required` | Redirect to `paymentUrl`. **It expires 24 h after the call** (`paymentUrlExpiresAt`): call `subscribe` again for a fresh one, never cache it. The subscription is born when the first period is paid (or when a trial starts on that page). |
+| has no live subscription | the default plan | `on_default_plan` | Nothing to pay. |
+| is `ACTIVE` | a higher plan (same currency and interval) | `upgrade_pending` | Redirect to `paymentUrl`: a prorated invoice; the new plan applies once it is paid. |
+| is `ACTIVE` | a lower or equal-price plan | `change_scheduled` | Applies at the end of the period (`scheduledChange.effectiveAt`). |
+| is `ACTIVE` | the default plan | `cancel_scheduled` | Ends at the end of the paid period. |
+| has something pending | its current plan | `pending_cleared` | The pending change or cancel is undone. |
+| is `TRIALING` | any plan | `change_scheduled` | Applied at the trial end, no proration. |
+| — | the same thing again | `unchanged` (or the same answer) | Nothing written. |
 
-An integration therefore sends the buyer to the share link. It does not call a "create subscription" API. (A dynamic checkout, `itaja-checkout-session`, sells a one-off sale, not a plan.) Not offered today: free trial from the link, plan change, proration.
+Refusals: `409 INVALID_CONTRACT_TRANSITION` (paused subscription), `409 PLAN_CHANGE_NOT_SUPPORTED` (another currency or interval), `409 CONTRACT_HELD_BY_PROVIDER` (card-billed), `404 PLAN_NOT_FOUND` (unknown name, or a plan renamed in code), `404 CUSTOMER_NOT_FOUND`.
 
-## Two collection regimes
+**Fulfil from the webhook, not from `successUrl`.** The return is payer-visible. Grant access on `checkout.paid` / `invoice.paid`, or after reading `GET /subscriptions/:id`.
 
-| | Card (`AUTOMATIC`) | Mobile money / crypto (`MANUAL`) |
+## Managing subscriptions
+
+| Method | Path | Notes |
 |---|---|---|
-| Who runs the schedule | the card network's billing, through Itaja's payment engine | **Itaja** |
-| Renewal | charged and retried automatically | the buyer **comes back and pays** an invoice |
-| Dunning | none from Itaja | e-mail reminders, then grace, then suspension |
-| Cancel / pause / resume from the dashboard | **refused**: `409 CONTRACT_HELD_BY_PROVIDER` | allowed |
+| `GET` | `/subscriptions` | Filters `productId`, `planId`, `customerId`, `status` |
+| `GET` | `/subscriptions/:subscriptionId` | One subscription and its invoices |
+| `POST` | `/subscriptions/:subscriptionId/cancel` | `{ "immediately": false }` (default) ends at period end; `true` ends now, **no refund**, unpaid invoices voided |
+| `POST` | `/subscriptions/:subscriptionId/pause` | `ACTIVE → PAUSED`; `409 CANNOT_PAUSE_TRIAL` during a trial |
+| `POST` | `/subscriptions/:subscriptionId/resume` | `PAUSED → ACTIVE`; paid days are not lost |
 
-**Today every contract is `MANUAL`.** The card rail is decided but not yet sellable end to end. Do not promise a merchant automatic card renewals.
+Paid invoices are never touched. A subscription out of the key's reach answers `404 SUBSCRIPTION_NOT_FOUND`.
 
-## The manual renewal cycle
+## Free trials
 
-- An invoice is issued **10 days before** the period ends and is payable via the share link (signed). The buyer gets a payment-due notice.
-- Past the due date: reminders (default attempts at day 1, 3 and 5), then a 7-day grace, then **suspension**. A payment at any point recovers the contract.
-- E-mail is the only reminder channel today (not SMS, WhatsApp or push), and reminders only go out when notifications are enabled on the deployment.
-- Renewals run only for **live** products. **Sandbox renews nothing** — do not try to test a renewal in sandbox.
+A plan with `trial.days > 0` starts `TRIALING` on the pay page **without any payment**. One trial per customer and product, ever (sandbox included). The buyer is e-mailed 72 h before the trial converts; conversion goes through the normal renewal below.
 
-## Statuses and gestures (dashboard)
+## Renewal: manual today
 
-`TRIALING`, `ACTIVE`, `PAUSED`, `CANCELED`, `ENDED`. A contract is **never** `SUSPENDED`: suspension belongs to the dunning machine, and it is what cuts access on the merchant's side.
+| | Mobile money, crypto (`MANUAL`) | Card (`AUTOMATIC`) |
+|---|---|---|
+| Who renews | the buyer comes back and pays an invoice | the card is charged automatically |
+| Status | **every subscription today** | decided, **not sellable yet** |
 
-| Gesture | Effect |
+- The period invoice is issued **10 days before** the period ends, with a payment link, and the buyer is e-mailed.
+- Past the due date: reminders (by default at days 1, 3 and 5), a 7-day grace, then suspension. A payment at any point recovers the subscription. E-mail is the only reminder channel.
+- **Sandbox renews nothing.** Renewals only run for live products; test renewal logic with the merchant, not in sandbox.
+
+Never promise a merchant automatic card renewals.
+
+## Webhooks
+
+| Topic | When |
 |---|---|
-| Pause | `ACTIVE → PAUSED` (refused during a trial: `409 CANNOT_PAUSE_TRIAL`) |
-| Resume | back to `ACTIVE`; the paused time is added to the period |
-| Cancel at period end (default) | runs to the end of the paid period; later unpaid invoices are voided |
-| Cancel now | stops now, **no refund**, every unpaid invoice voided |
+| `checkout.paid` | the first period was paid on the pay page (the subscription is born) |
+| `invoice.paid` | a later invoice is paid: renewal, upgrade, recovery from dunning |
+| `invoice.payment_failed` | a manual invoice passed its due date and entered dunning — once per invoice |
+| `subscription.past_due` | the subscription entered dunning |
+| `subscription.canceled` | the subscription ended for good (`data.reason`: `merchant`, `period_end`, `provider_canceled`, `retries_exhausted`) |
 
-Paid invoices are never touched. A plan nobody ever subscribed to can be deleted; otherwise it can only be **archived** (`409 PLAN_HAS_CONTRACTS`), which stops new sales and leaves running contracts renewing.
+Fields include `contractId`, `customerId`, `planId`, period dates, and `amount` in major units. `subscription.created`, `.updated`, `.renewed` and `.payment_failed` are **not emitted**: there is no "renewed" event — `invoice.paid` is the renewal signal. See `itaja-webhooks`.
 
 ## Gating access in the merchant's app
 
-The merchant's app needs to know "may this customer use the product right now?". Options that exist today:
+Store the subscription state from the webhooks above and reconcile with `GET /subscriptions?customerId=…`. Grant access while `ACTIVE` or `TRIALING`; restrict on `subscription.past_due` per the merchant's policy; remove on `subscription.canceled`.
 
-- Poll `GET /api/v1/customers/:customerId` and read `customerSubscription` (`isActive`, `isOnFreeTrial`, `shouldRenewAt`, `canceledAt`).
-- Treat a payment confirmation (`checkout.paid`, `itaja-webhooks`) as the signal that a period was paid. **Verify against a sandbox delivery before depending on it for renewals** — whether renewal payments surface as `checkout.paid` for your account is not something to assume.
-
-**Do not build on `subscription.*` webhooks.** `subscription.created`, `.updated`, `.cancelled`, `.renewed` and `.payment_failed` appear in the dashboard's event picker, but the platform **does not emit them yet** — a subscription to one is accepted and simply never fires. Same for `payment.*` and `client.*`. The topics actually delivered are `checkout.paid`, `license.*` and `credits.*`.
-
-## Credit subscriptions
-
-A `CREDITS` product with a subscription or hybrid form follows the same shape with its own engine: manual contract, period invoice 10 days ahead, coins granted at each paid period, contract ended for non-payment. See `itaja-credits`. Buyers can cancel a credit subscription from the portal (`itaja-customers`).
-
-## What to tell the merchant
-
-"Plans and subscriber management are in your dashboard; your app sends the buyer to the product's share link and checks the customer's subscription status. Card auto-renewal and subscription webhooks are not available yet; renewals are paid by the buyer through reminders."
+Plan features (`includes`) are recorded but **not enforced or metered by Itaja yet** — there is no entitlement check endpoint. The merchant's app enforces its own limits from the plan the customer is on.
 
 ## Done when
 
-- [ ] No code calls a plan/subscription route that does not exist on the developer API.
-- [ ] Nothing depends on `subscription.*` webhooks.
+- [ ] Customers move between plans only through `subscribe`; no invented "create subscription" call.
+- [ ] `paymentUrl` is used immediately, never stored past its expiry.
+- [ ] Access follows `invoice.paid` / `subscription.*` webhooks and the API, never the return URL.
 - [ ] The merchant was told renewals are manual and sandbox does not renew.
-- [ ] Access gating reads the customer's status from the API or a verified payment event.
+- [ ] Feature limits are enforced by the app, not assumed from Itaja.

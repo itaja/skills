@@ -1,11 +1,15 @@
 ---
 name: itaja-licenses
-description: Use when a merchant sells software licences through Itaja — issuing and managing keys server-side, verifying and activating keys from an app, offline entitlement tokens, rotation, suspension and reseller batches.
+description: Sells software licence keys through Itaja — issuing and managing keys from the merchant's server, verifying and activating keys from the shipped app without any API key, offline entitlement tokens, rotation, suspension, reseller batches and key hand-off to the merchant's site. Use when a merchant sells desktop, mobile or self-hosted software unlocked by a key.
+license: MIT
+metadata:
+  author: itaja
+  version: "1.0.0" # x-release-please-version
 ---
 
 # Itaja licences
 
-A `LICENSE` product issues keys shaped `ITJ-XXXX-XXXX-XXXX`. Read `itaja-integration` first. Two audiences, two kinds of route — keep them apart.
+A `LICENSE` product issues keys shaped `ITJ-XXXX-XXXX-XXXX`. Read `itaja-integration` first. Server side, use the package `itaja-sdk` picks (`itaja.licenses.issue / revoke / rotate / resend…`) or an adapter (`itaja-adapter`); the shipped app never uses either. Two audiences, two kinds of route — keep them apart.
 
 | | Who calls | Credential |
 |---|---|---|
@@ -28,6 +32,7 @@ A refund revokes the issued key automatically.
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/products/:productId/licenses` | Issue a key (clear key returned **once**) |
+| `POST` | `/products/:productId/licenses/expire-due` | Mark keys past their end date as `EXPIRED` |
 | `GET` | `/products/:productId/licenses` | List, **masked** keys, `limit` 1–100 (default 20), `cursor` |
 | `GET` | `/products/:productId/licenses/:keyId` | One key and its activations |
 | `POST` | `…/:keyId/revoke` | Terminal. Optional `reason`. |
@@ -39,6 +44,7 @@ A refund revokes the issued key automatically.
 
 (all under `/api/v1`)
 
+- **Issuing** takes `{ customerId?, activationsMax?, expiresAt? }`; `customerId` is Itaja's id or the merchant's own (`itaja-customers`). A key bought on the pay page is issued automatically — do not also issue one by hand for the same sale.
 - **Masked keys** look like `ITJ-••••-••••-XXXX`. They are not keys and never parse as one. **No read route ever returns a clear key again.** If the merchant did not store the clear key at issuance, the answer is `resend` or `rotate`, not another `GET`.
 - **Paging:** walk `?cursor=<meta.nextCursor>` until it is `null`. An empty or malformed cursor is `422 INVALID_CURSOR`; it never restarts at page 1.
 - **Transitions:** `REVOKED` is terminal — only a reissue brings a customer back. `EXPIRED` keys do not rotate (`409 LICENSE_EXPIRED`); renew them with `PATCH` and a future `expiresAt`, which also returns the key to `ACTIVE`. A repeated `revoke` is a `200` that writes nothing.
@@ -76,9 +82,9 @@ POST /api/v1/licenses/deactivate
 
 `exp ≤ iat + 72 h`; `graceUntil = exp + 72 h`, capped by the licence's own `expiresAt` — the grace covers a network outage, never an expired licence. A revoked key keeps working offline only until `exp`/`graceUntil` (at most ~6 days after issuance of the last token): that bound is what "rejected at the next heartbeat" means. Signing keys rotate every 90 days with an overlap window; clients that follow `kid` need no change.
 
-### The SDK
+### No client SDK for apps
 
-`@itaja/licenses` exists in Itaja's repository but is a **private workspace package at version 0.0.1 — not published to a registry**. Do not run `npm install @itaja/licenses` or tell the merchant to. Call the HTTP routes above (a thin `fetch`/`axios` client is enough), or ask the Itaja team whether a published SDK exists.
+`@itaja/licenses` is a **private, unpublished** package: do not install it or tell the merchant to. The server SDKs (`itaja-sdk`) wrap the management routes; an app that verifies keys calls the three public routes above directly (a thin HTTP client is enough) — it never embeds a server SDK, which holds the API key.
 
 ## Reseller and bulk batches
 
@@ -91,7 +97,7 @@ Mint keys **before** any sale (prepaid cards, resellers, campus bundles): `POST 
 
 ## Delivering the key to the merchant's own site
 
-Opt-in per product, off by default (`GET`/`PUT …/licenses/merchant-redirect`): when the share link's success URL carries `[license_key]`, Itaja substitutes a **single-use retrieval token** (`lkr_…`, 15-minute TTL), never the key. The merchant's **server** exchanges it once:
+Opt-in per product, off by default (`GET`/`PUT …/licenses/merchant-redirect`): when the product's pay-page success URL (set in the dashboard) carries `[license_key]`, Itaja substitutes a **single-use retrieval token** (`lkr_…`, 15-minute TTL), never the key. The merchant's **server** exchanges it once:
 
 ```http
 POST /api/v1/licenses/retrieval/redeem      (API key required)

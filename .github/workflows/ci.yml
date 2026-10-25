@@ -1,0 +1,51 @@
+# Checks every pull request and every push to main. Also called by the release
+# workflow, so nothing is tagged that does not pass the same checks.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+
+      - name: Agent Skills specification
+        run: |
+          status=0
+          for dir in skills/*/; do
+            uvx --from skills-ref==0.1.1 agentskills validate "$dir" || status=1
+          done
+          exit "$status"
+
+      - name: Versions, references, links, leaks
+        run: python3 scripts/check.py
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+
+      - name: Every skill is discoverable by the skills CLI
+        run: |
+          expected=$(find skills -mindepth 1 -maxdepth 1 -type d | wc -l)
+          out=$(npx -y skills@1.7.4 add . --list < /dev/null 2>&1 | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g') || true
+          echo "$out"
+          found=$(grep -oE 'Found [0-9]+ skills?' <<<"$out" | grep -oE '[0-9]+' | head -1)
+          echo "skills folders: $expected, found by the CLI: ${found:-none}"
+          test "${found:-0}" -eq "$expected"
