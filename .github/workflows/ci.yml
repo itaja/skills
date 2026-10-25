@@ -44,6 +44,8 @@ jobs:
       - name: Every skill is discoverable by the skills CLI
         run: |
           expected=$(find skills -mindepth 1 -maxdepth 1 -type d | wc -l)
-          listed=$(npx -y skills@1.7.4 add . --list 2>&1 | grep -c '^│    itaja-' || true)
-          echo "skills folders: $expected, listed by the CLI: $listed"
-          test "$expected" -eq "$listed"
+          out=$(npx -y skills@1.7.4 add . --list < /dev/null 2>&1 | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g') || true
+          echo "$out"
+          found=$(grep -oE 'Found [0-9]+ skills?' <<<"$out" | grep -oE '[0-9]+' | head -1)
+          echo "skills folders: $expected, found by the CLI: ${found:-none}"
+          test "${found:-0}" -eq "$expected"
