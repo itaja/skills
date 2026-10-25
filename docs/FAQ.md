@@ -65,7 +65,7 @@ It lists the products of the **key's mode only**. Use a live key to see live pro
 Read the server code's manifest. Node ≥ 20 / Bun / Deno / Workers: `@itaja/node`. Python ≥ 3.10 (Django, FastAPI, Flask): `itaja`. Laravel 12–13 on PHP ≥ 8.2: `itaja/itaja-laravel`. Anything else: an adapter (`itaja-adapter`). See `itaja-sdk`.
 
 **My backend is in Go (Ruby, Java, C#, Rust…). What now?**
-Build a small adapter in your repository following `itaja-adapter`: auth header, `Idempotency-Key` on writes, bounded retries, typed errors, webhook verification. Prove it with the published vectors (`https://github.com/itaja/itaja-sdks/tree/main/spec`). A plain-PHP reference implementation ships with the skill.
+Build a small adapter in your repository following `itaja-adapter`: auth header, `Idempotency-Key` on writes, bounded retries, typed errors, webhook verification. Prove it with the published vectors (`https://github.com/itaja/itaja-sdks/tree/main/spec`).
 
 **My monorepo has a JavaScript front end and a Python API. Which package?**
 The one for the service that holds the key — `itaja` in the API. The front end gets no package.

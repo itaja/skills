@@ -34,11 +34,9 @@ An adapter is one small module **inside the merchant's repository**, server-side
 9. One function per route actually used, named after the job (`createCheckout`, `subscribe`, `consumeCredits`, `verifyLicense`…), plus a generic `request(method, path, body?, query?, idempotencyKey?)` escape hatch. Take request and response shapes from the OpenAPI document — generate types from it when the stack has a generator, otherwise write only the fields used.
 10. Products, plans and packs: if the merchant declares a catalogue, push it as a JSON document with `PUT /catalog` from a script or CI step (`itaja-catalog`); the adapter does not need a DSL.
 
-## Reference implementation
+## Writing it in the target language
 
-`assets/itaja-adapter.php` is a complete adapter in plain PHP 8.1+ (curl, json, no framework): client with retries and idempotency, typed `ItajaError`, and `ItajaWebhook::verify`. It passes the conformance checks below. Translate it to the target language rather than designing from scratch; keep the same behaviour, idioms of the target stack.
-
-Equivalents to reach for:
+Write the adapter idiomatically for the stack — its HTTP client, its error types, its test framework — from the contract above, not by translating another language's code. The conformance tests below are what prove it correct. Building blocks to reach for:
 
 | Stack | HTTP | HMAC + constant-time compare |
 |---|---|---|
