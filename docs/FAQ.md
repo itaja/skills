@@ -186,6 +186,9 @@ You can, but keep one endpoint and one secret per environment and check `mode` a
 **How do I test my handler?**
 Use the dashboard's ping and sample deliveries (signed, always `sandbox`), and a real sandbox checkout. A local server needs an `https` tunnel.
 
+**How do I test a failed or pending payment?**
+With a sandbox checkout and the test values: a mobile money number ending in `0040` fails (insufficient funds), `0080` stays pending then fails, `0070` is refused at once; test cards such as `4000 0000 0000 0002` (declined) or `4000 0000 0000 3220` (3-D Secure) do the same for cards. Full tables in `itaja-checkout-session`. A failure sends no `checkout.paid`; a later retry that succeeds does.
+
 ---
 
 ## Products and customers

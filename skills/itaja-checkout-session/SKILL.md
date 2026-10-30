@@ -113,6 +113,37 @@ A retried creation with the same `reference` (scoped to the account) returns the
 | `503 CHECKOUT_NOT_CONFIGURED` | This deployment cannot take payments; nothing written | Stop and tell the merchant. |
 | `503 SERVICE_UNAVAILABLE` | Infrastructure | Retry with backoff, same `reference`. |
 
+## Test every outcome in sandbox
+
+On a sandbox checkout (`itjs_` key), the buyer's input picks the outcome. This lets you test the failure paths, not only the success. Nothing is charged.
+
+**Mobile money**: the **last four digits** of the phone number. Any country or operator. Spaces, `+` and separators are ignored.
+
+| Ends with | Outcome |
+|---|---|
+| anything else | settled after ~3 s |
+| `0040` / `0010` / `0030` / `0050` / `0060` | pending, then failed after ~3 s: insufficient funds / wallet limit / not approved / payment already in progress / number not on that operator |
+| `0070` | refused at once (operator unavailable), no payment started |
+| `0080` | pending ~1 min, then failed (never confirmed) |
+| `0090` | settled after ~45 s |
+
+**Cards**: a sandbox checkout shows an Itaja test card form that accepts **only** these numbers. Any future expiry, any 3-digit CVC.
+
+| Card | Outcome |
+|---|---|
+| `4242 4242 4242 4242` (Visa), `5555 5555 5555 4444` (Mastercard) | settled |
+| `4000 0000 0000 9995` / `6975` / `0002` | failed: insufficient funds / card limit / declined |
+| `4000 0000 0000 0119` | refused at once (payment service unavailable) |
+| `4000 0000 0000 3220` | simulated 3-D Secure: **Approve** settles, **Refuse** fails |
+
+How to use it:
+
+- A failed payment sends **no** `checkout.paid`. Itaja's API and webhooks carry no machine-readable failure reason: the buyer reads it on the payment page. Do not branch your code on a reason.
+- The buyer can retry in the same session. A later success still sends `checkout.paid`, so a handler must never treat the checkout as dead after a first failure.
+- Never ask the merchant for a real card or a real phone number to test. Use these values, and only with a sandbox key.
+
+Reference: https://docs.getitaja.com/guides/test-in-sandbox
+
 ## Done when
 
 - [ ] Key and base URL come from the environment; nothing secret in the repo or the client.
@@ -120,3 +151,4 @@ A retried creation with the same `reference` (scoped to the account) returns the
 - [ ] `data.id` is stored with the order before the redirect.
 - [ ] `reference` (and `Idempotency-Key`) are stable per order.
 - [ ] The order is marked paid by the webhook handler only — never by a return URL.
+- [ ] In sandbox, a success, a refusal (`…0040`) and a pending payment (`…0080`) were run, and only the success was fulfilled.
