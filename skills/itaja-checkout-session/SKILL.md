@@ -126,6 +126,7 @@ On a sandbox checkout (`itjs_` key), the buyer's input picks the outcome. This l
 | `0070` | refused at once (operator unavailable), no payment started |
 | `0080` | pending ~1 min, then failed (never confirmed) |
 | `0090` | settled after ~45 s |
+| `0020` | asks the buyer for an SMS code: `123456` settles, any other code fails |
 
 **Cards**: a sandbox checkout shows an Itaja test card form that accepts **only** these numbers. Any future expiry, any 3-digit CVC.
 
