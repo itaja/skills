@@ -28,6 +28,7 @@ Itaja lets a merchant sell one-off orders, subscriptions, prepaid credits and so
 | Sell software licence keys | `itaja-licenses` |
 | Sell recurring plans, upgrade, downgrade, cancel | `itaja-subscriptions` |
 | Prepare the move to real money, or audit an integration | `itaja-go-live` |
+| Check the installed skills are current, notify the merchant of updates | `itaja-updates` |
 
 Questions that do not fit a skill: `docs/FAQ.md`. What exists where, and what does not exist: `docs/COVERAGE.md`.
 

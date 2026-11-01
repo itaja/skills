@@ -83,6 +83,10 @@
         },
         {
           "type": "generic",
+          "path": "skills/itaja-updates/SKILL.md"
+        },
+        {
+          "type": "generic",
           "path": "skills/itaja-webhooks/SKILL.md"
         }
       ]

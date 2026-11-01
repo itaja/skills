@@ -40,6 +40,7 @@ Start with `itaja-integration`: it is the entry point and routes the agent to th
 | [`itaja-licenses`](skills/itaja-licenses/SKILL.md) | Issue, verify and activate software licences, offline tokens, reseller batches |
 | [`itaja-subscriptions`](skills/itaja-subscriptions/SKILL.md) | Put customers on plans, upgrade, downgrade, cancel; renewals and their limits |
 | [`itaja-go-live`](skills/itaja-go-live/SKILL.md) | Prepare the move to real money and audit an integration |
+| [`itaja-updates`](skills/itaja-updates/SKILL.md) | Check whether the installed skills are behind the release and tell the merchant what changed |
 
 ## Documentation
 
