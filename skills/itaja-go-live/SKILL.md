@@ -59,6 +59,7 @@ In live, a payer is only ever sent back to a host the account has **verified**. 
 - [ ] Nothing is fulfilled from a return URL or its query parameters.
 - [ ] `429`, `5xx`, `409 IDEMPOTENCY_KEY_IN_PROGRESS` are retried with the same key and a cap; other `4xx` are not.
 - [ ] A subscription `paymentUrl` is used at once, never cached past `paymentUrlExpiresAt`.
+- [ ] Every outcome was run in sandbox with the test numbers and test cards (`itaja-checkout-session` → "Test every outcome in sandbox"). A refusal and a never-confirmed payment fulfilled nothing; a retry that succeeded fulfilled once.
 
 **Webhooks**
 - [ ] A live endpoint with its own secret is registered on public `https`, subscribed only to handled topics.
