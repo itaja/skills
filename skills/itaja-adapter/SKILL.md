@@ -1,6 +1,6 @@
 ---
 name: itaja-adapter
-description: Builds a small, tested Itaja adapter that wraps the developer API when no official SDK exists for the repository's language or framework (Go, Ruby, Java/Kotlin, C#, Rust, Elixir, Dart server, plain PHP without Laravel…). Defines the contract the adapter must honour — auth header, Idempotency-Key, retries, typed errors, webhook signature verification — and how to prove it against Itaja's published conformance vectors. Use after itaja-sdk finds no official package for the stack.
+description: Builds a small, tested Itaja adapter that wraps the developer API when no official SDK exists for the repository's language or framework (Go, Ruby, Java/Kotlin, C#, Rust, Elixir, Dart server, plain PHP without Laravel…). Defines the contract the adapter must honour — auth header, Idempotency-Key, retries, typed errors, Standard Webhooks signature verification — and how to prove it against Itaja's published conformance vectors. Use after itaja-sdk finds no official package for the stack.
 license: MIT
 metadata:
   author: itaja
@@ -26,19 +26,20 @@ An adapter is one small module **inside the merchant's repository**, server-side
 
 **Webhooks**
 
-7. Verify on the **raw body**: `HMAC-SHA256(secret as issued, "<x-itaja-timestamp>.<raw body>")`, base64, compared **constant-time** against **every** signature after the `v1,` prefix of `x-itaja-signature`; refuse a timestamp more than 300 s from now. On failure answer `400` and do nothing.
-8. Hand the decoded event to the merchant's code only after verification, deduplicated on `id` (see `itaja-webhooks` for the handler order).
+7. Deliveries are signed with [Standard Webhooks](https://www.standardwebhooks.com). When the stack has a maintained Standard Webhooks library, use it instead of writing the check.
+8. Otherwise verify on the **raw body**: the key is the secret without `whsec_`, **base64-decoded**; the signature is `HMAC-SHA256(key, "<webhook-id>.<webhook-timestamp>.<raw body>")`, base64. Compare it **constant-time** against **every** space-separated `v1,<base64>` entry of `webhook-signature`; one match is enough. Refuse a timestamp more than 300 s from now. On failure answer `400` and do nothing.
+9. Hand the decoded event to the merchant's code only after verification, deduplicated on `webhook-id`, which a redelivery keeps (see `itaja-webhooks` for the handler order).
 
 **Typed surface**
 
-9. One function per route actually used, named after the job (`createCheckout`, `subscribe`, `consumeCredits`, `verifyLicense`…), plus a generic `request(method, path, body?, query?, idempotencyKey?)` escape hatch. Take request and response shapes from the OpenAPI document — generate types from it when the stack has a generator, otherwise write only the fields used.
-10. Products, plans and packs: if the merchant declares a catalogue, push it as a JSON document with `PUT /catalog` from a script or CI step (`itaja-catalog`); the adapter does not need a DSL.
+10. One function per route actually used, named after the job (`createCheckout`, `subscribe`, `consumeCredits`, `verifyLicense`…), plus a generic `request(method, path, body?, query?, idempotencyKey?)` escape hatch. Take request and response shapes from the OpenAPI document — generate types from it when the stack has a generator, otherwise write only the fields used.
+11. Products, plans and packs: if the merchant declares a catalogue, push it as a JSON document with `PUT /catalog` from a script or CI step (`itaja-catalog`); the adapter does not need a DSL.
 
 ## Writing it in the target language
 
 Write the adapter idiomatically for the stack — its HTTP client, its error types, its test framework — from the contract above, not by translating another language's code. The conformance tests below are what prove it correct. Building blocks to reach for:
 
-| Stack | HTTP | HMAC + constant-time compare |
+| Stack | HTTP | HMAC, base64 + constant-time compare |
 |---|---|---|
 | Go | `net/http` | `crypto/hmac`, `hmac.Equal` |
 | Ruby | `Net::HTTP` | `OpenSSL::HMAC`, `Rack::Utils.secure_compare` / `OpenSSL.fixed_length_secure_compare` |
@@ -55,15 +56,15 @@ The contract files are public in `https://github.com/itaja/itaja-sdks/tree/main/
 
 | File | Use |
 |---|---|
-| `signature-vectors.json` | `{ secret, vectors: [{ name, timestamp, body, signature }] }`, signed by Itaja's backend |
+| `signature-vectors.json` | signed sample deliveries: a secret, and for each vector the message id, the timestamp, the body and the expected `webhook-signature`. Read the field names in the file |
 | `openapi.json` | request and response shapes |
 | `catalog.schema.json` | the `PUT /catalog` document |
 
 Write these tests in the merchant's test suite (raw URL: `https://raw.githubusercontent.com/itaja/itaja-sdks/main/spec/signature-vectors.json`, or a copy committed under the tests):
 
-1. Every vector verifies (inject "now" = vector timestamp).
-2. Each vector **fails** when the body gains one byte, with another secret, with the `whsec_` prefix stripped, 400 s later, and with a `v2,` prefix.
-3. A rotated header `v1,<garbage>,<real>` verifies.
+1. Every vector verifies (inject "now" = vector timestamp), and so does the known answer printed in `itaja-webhooks` → "Test the verifier".
+2. Each vector **fails** when the body gains one byte, when the message id changes, with another secret, with the secret used as a raw string instead of its base64-decoded bytes, 400 s later, and with a `v2,` entry.
+3. A rotated header `v1,<garbage> v1,<real>` verifies.
 4. Against a local stub server: a `503` then `200` returns the data in two calls carrying the **same** `Idempotency-Key`; a `422` raises its `code` and `details`; a plain-text `401` raises once, without retry, without the key in the message.
 5. A sandbox smoke test with a real `itjs_` key against a read route (`GET /products`) — only if the merchant provided the key in the environment.
 
@@ -78,6 +79,6 @@ The adapter is done when all of them pass in CI.
 ## Done when
 
 - [ ] `itaja-sdk` was checked first and no official package fits.
-- [ ] The adapter honours points 1–10 and lives in one module of the merchant's server code.
+- [ ] The adapter honours points 1–11 and lives in one module of the merchant's server code.
 - [ ] The conformance tests pass in CI.
 - [ ] Key and secret come from the environment; `.env.example` lists `ITAJA_API_KEY`, `ITAJA_WEBHOOK_SECRET`, `ITAJA_API_URL`.

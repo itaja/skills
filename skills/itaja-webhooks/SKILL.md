@@ -1,6 +1,6 @@
 ---
 name: itaja-webhooks
-description: Receives and trusts Itaja outbound webhooks (checkout.paid, invoice.*, subscription.past_due, subscription.canceled, license.*, credits.*) — signature verification on the raw body, replay windows, deduplication, sandbox vs live, and fulfilling an order exactly once. Use when a merchant's server must react to Itaja payment or lifecycle events.
+description: Receives and trusts Itaja outbound webhooks (checkout.paid, invoice.*, subscription.past_due, subscription.canceled, license.*, credits.*) — Standard Webhooks signature verification on the raw body, replay windows, deduplication, sandbox vs live, and fulfilling an order exactly once. Use when a merchant's server must react to Itaja payment or lifecycle events.
 license: MIT
 metadata:
   author: itaja
@@ -22,49 +22,104 @@ Endpoints are created in the merchant **dashboard**, not with the API key.
 
 ## Verifying a delivery
 
-Every delivery carries:
+Itaja signs every delivery with [Standard Webhooks](https://www.standardwebhooks.com). It is the only scheme. Every delivery carries:
 
-- `x-itaja-timestamp` — unix seconds.
-- `x-itaja-signature` — `v1,<base64>`. During a secret rotation it carries one signature per valid secret: `v1,<current>,<previous>`.
+- `webhook-id` — the unique id of the message. A redelivery of the same message keeps the same id: it is the deduplication key.
+- `webhook-timestamp` — unix seconds.
+- `webhook-signature` — one or more entries separated by a space, each `v1,<base64>`. For 24 hours after a secret rotation there are two entries (new secret, previous secret). One match is enough.
+- `webhook-topic` — the event type. Informational and not signed: route on the `type` of the verified body.
 
-The signature is `HMAC-SHA256(key = the secret string as issued, message = "<timestamp>.<raw body>")`, base64. The key keeps its `whsec_` prefix and is not decoded. This is **not** the Standard Webhooks scheme: a Standard Webhooks library will not verify it.
+How the signature is built:
+
+- Signed content: `<webhook-id>.<webhook-timestamp>.<raw body>`. The body is the bytes received, never a re-serialised object.
+- Key: strip `whsec_` from the secret, then **base64-decode** the rest. The key is those bytes.
+- Signature: `HMAC-SHA256(key, signed content)`, base64.
+
+An older secret made of `whsec_` and 48 hexadecimal characters stays valid without a rotation. Decode it as base64 like any other secret, never as hex.
+
+**Prefer a library.** The official SDKs verify it (`itaja-sdk`), and so does any Standard Webhooks library (`standardwebhooks` on npm and PyPI, and the ports listed on standardwebhooks.com):
+
+```ts
+import { Webhook } from "standardwebhooks";
+
+const wh = new Webhook(process.env.ITAJA_WEBHOOK_SECRET!);
+// rawBody: the request body as received. headers: the three webhook-* headers.
+const event = wh.verify(rawBody, headers); // throws when the delivery is not authentic
+```
+
+```python
+from standardwebhooks import Webhook
+
+event = Webhook(os.environ["ITAJA_WEBHOOK_SECRET"]).verify(raw_body, headers)  # raises on failure
+```
+
+Without a library, this is the whole check:
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export function verifyItajaSignature(
-  rawBody: string,
-  signatureHeader: string | null,
-  timestampHeader: string | null,
+export function verifyItajaWebhook(
+  rawBody: string | Uint8Array,
+  headers: { id: string | null; timestamp: string | null; signature: string | null },
   secret: string,
   toleranceSeconds = 300,
   nowSeconds = Date.now() / 1000,
 ): boolean {
-  if (!signatureHeader || !timestampHeader) return false;
-  const ts = Number(timestampHeader);
-  if (!Number.isInteger(ts)) return false;
-  if (Math.abs(nowSeconds - ts) > toleranceSeconds) return false;
+  const { id, timestamp, signature } = headers;
+  if (!id || !timestamp || !signature) return false;
+  if (!/^\d+$/.test(timestamp)) return false;
+  if (Math.abs(nowSeconds - Number(timestamp)) > toleranceSeconds) return false;
 
-  const expected = createHmac("sha256", secret)
-    .update(`${timestampHeader}.${rawBody}`, "utf8")
+  const key = Buffer.from(secret.startsWith("whsec_") ? secret.slice(6) : secret, "base64");
+  if (key.length === 0) return false;
+  const expected = createHmac("sha256", key)
+    .update(`${id}.${timestamp}.`, "utf8")
+    .update(rawBody)
     .digest();
 
-  const [version, ...candidates] = signatureHeader.split(",");
-  if (version !== "v1") return false;
-  return candidates.some((c) => {
-    const given = Buffer.from(c, "base64");
+  return signature.split(" ").some((entry) => {
+    const [version, value] = entry.split(",");
+    if (version !== "v1" || !value) return false;
+    const given = Buffer.from(value, "base64");
     return given.length === expected.length && timingSafeEqual(given, expected);
   });
 }
 ```
 
+Call it with `headers = { id: req.headers["webhook-id"], timestamp: req.headers["webhook-timestamp"], signature: req.headers["webhook-signature"] }`.
+
 Rules that bite:
 
 1. **Verify the raw bytes.** Body parsers (`express.json()`, framework JSON middleware) change them. Read the raw body on this route.
-2. **Constant-time compare** (`timingSafeEqual`), never `===`.
-3. **Enforce the timestamp window.** The signature covers the timestamp; rejecting old ones is the receiver's job.
-4. **Compare against every signature** in the header, not only the first.
-5. **Reject any failure with `400`** and process nothing. Never log the secret or the signature header.
+2. **Decode the key.** Strip `whsec_`, base64-decode the rest. Signing with the secret string itself fails.
+3. **Sign all three parts**: id, timestamp and body, joined by dots.
+4. **Constant-time compare** (`timingSafeEqual`), never `===`.
+5. **Enforce the timestamp window**: refuse a timestamp more than 5 minutes from now.
+6. **Try every entry** of `webhook-signature`, split on spaces, not only the first.
+7. **Reject any failure with `400`** and process nothing. Never log the secret or the signature header.
+
+### Test the verifier
+
+Check any implementation against this known answer (a test secret, not a real one):
+
+| Input | Value |
+|---|---|
+| secret | `whsec_aXRhamEta2F0` |
+| `webhook-id` | `msg_test_1` |
+| `webhook-timestamp` | `1760500000` |
+| raw body | `{"id":"itaja_evt_test_1","type":"endpoint.ping","apiVersion":"v1","mode":"sandbox","createdAt":"2026-10-15T04:26:40.000Z","data":{}}` |
+| `webhook-signature` | `v1,bvxByHGU9qj8jGhHh6KMKcMrVGS+OQZg8M7pF+Xdegk=` |
+
+Tests to write, with "now" injected as the vector's timestamp:
+
+1. The known answer verifies.
+2. It fails when the body gains one byte, when `webhook-id` changes, with another secret, with the secret used as a raw string, 301 seconds later, and with a `v2,` entry.
+3. A rotated header `v1,<other> v1,<real>` verifies.
+4. A missing header fails.
+
+To send a signed delivery to a local handler, sign with the same recipe (`new Webhook(secret).sign(id, new Date(), body)` in `standardwebhooks`) or use the SDK's `itaja trigger` command (`itaja-sdk`).
+
+Migrating from the previous scheme: the headers `x-itaja-signature` and `x-itaja-timestamp` are no longer sent. A handler that reads them must move to the check above.
 
 ## Handling an event
 
@@ -78,7 +133,7 @@ Rules that bite:
 In the handler, in this order:
 
 1. Verify the signature. Fail → `400`.
-2. **Deduplicate on `id`.** Insert the event id under a unique constraint *in the same transaction* as the fulfilment. A duplicate answers `200` and does nothing. Delivery is at-least-once and unordered.
+2. **Deduplicate on `webhook-id`.** Insert the header's value under a unique constraint *in the same transaction* as the fulfilment. A duplicate answers `200` and does nothing. Delivery is at-least-once and unordered.
 3. **Check the environment.** `checkout.paid`, `invoice.*` and `subscription.*` carry `mode`: production fulfils only `"live"`, and answers `200` + a log line to `"sandbox"`. `license.*` and `credits.*` envelopes carry **no** `mode`: tell the environment by `data.productId`, which is different for sandbox and live products.
 4. **Correlate.** For `checkout.paid`, find the order by `data.checkoutId` — the `data.id` stored at checkout creation (`itaja-checkout-session`). Unknown → `200`, log, alert; never invent an order.
 5. **Cross-check** `amount` and `currency` against the stored `total` and `currency`. A mismatch is an incident, not a fulfilment.
@@ -103,12 +158,13 @@ Ignore unknown `type`s with a `200`, so a new topic never breaks a deployed hand
 
 ## Delivery guarantees
 
-At-least-once, unordered, redelivered on a non-`2xx` answer. The retry schedule and the source IPs are not documented: rely on the signature (no IP allowlist), on the event id for deduplication, and on reconciliation from the API (`GET /subscriptions/:id`, a licence, a wallet) if an event seems missing.
+At-least-once, unordered, redelivered on a non-`2xx` answer. The retry schedule and the source IPs are not documented: rely on the signature (no IP allowlist), on `webhook-id` for deduplication, and on reconciliation from the API (`GET /subscriptions/:id`, a licence, a wallet) if an event seems missing.
 
 ## Done when
 
-- [ ] The raw body is verified, constant-time, every signature of the header, with a timestamp window.
-- [ ] Event ids are deduplicated atomically with the fulfilment.
+- [ ] Deliveries are verified as Standard Webhooks: raw body, base64-decoded key, constant-time, every entry of `webhook-signature`, 5-minute window.
+- [ ] The verifier passes the known-answer tests above.
+- [ ] `webhook-id` is deduplicated atomically with the fulfilment.
 - [ ] Production ignores sandbox events (`mode`, or the product id where `mode` is absent).
 - [ ] Orders are matched by the stored checkout id and the amount is cross-checked.
 - [ ] No handler waits on a topic that is not emitted.
