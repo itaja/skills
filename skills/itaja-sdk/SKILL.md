@@ -9,7 +9,7 @@ metadata:
 
 # Itaja official SDKs
 
-Read `itaja-integration` first. Prefer an SDK over hand-written HTTP when the stack has one: it sets the key header, an `Idempotency-Key` on every write, retries, typed errors, and a webhook route that verifies signatures, deduplicates and ignores the other mode.
+Read `itaja-integration` first. Prefer an SDK over hand-written HTTP when the stack has one: it sets the key header, an `Idempotency-Key` on every write, retries, typed errors, and a webhook route that verifies Standard Webhooks signatures, deduplicates and ignores the other mode.
 
 ## Choose the package from the repository, not from habit
 

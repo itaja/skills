@@ -2,7 +2,7 @@
 
 [![skills.sh](https://skills.sh/b/itaja/skills)](https://skills.sh/itaja/skills)
 
-Skills that let a coding agent integrate [Itaja](https://getitaja.com) into a merchant's app **securely** and within Itaja's constraints — server-side keys, sandbox before live, strict return URLs on verified domains, signed webhooks as the only proof of payment.
+Skills that let a coding agent integrate [Itaja](https://getitaja.com) into a merchant's app **securely** and within Itaja's constraints — server-side keys, sandbox before live, strict return URLs on verified domains, signed webhooks ([Standard Webhooks](https://www.standardwebhooks.com)) as the only proof of payment.
 
 Works with Claude Code, Codex, Cursor, OpenCode and every agent supported by the [`skills` CLI](https://github.com/vercel-labs/skills). The skills follow the [Agent Skills specification](https://agentskills.io/specification).
 
@@ -68,7 +68,7 @@ The generated OpenAPI document (`https://api.getitaja.com/api/references/json`) 
 - Validate before every change: `uvx --from skills-ref agentskills validate skills/<name>` for each skill, `python3 scripts/check.py` (versions, references, links, leaks), and `npx -y skills add . --list` must list all of them. CI runs the same three on every pull request.
 - Never edit `metadata.version` or `CHANGELOG.md` by hand, and never push a tag: the release workflow owns them. A new skill is added to `extra-files` in `release-please-config.json` (`scripts/check.py` fails otherwise).
 - No secret, no internal hostname, no private path, no internal vendor or issue number.
-- Code samples must run: the webhook verifier in `itaja-webhooks` is checked against Itaja's published signature vectors plus rotated, tampered, stale and malformed inputs.
+- Code samples must run: the webhook verifier in `itaja-webhooks` is checked against the reference `standardwebhooks` library and its own known answer, plus rotated, tampered, stale and malformed inputs.
 - Conventional Commits; one change per pull request.
 
 ## Releases

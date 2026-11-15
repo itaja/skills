@@ -63,8 +63,8 @@ In live, a payer is only ever sent back to a host the account has **verified**. 
 
 **Webhooks**
 - [ ] A live endpoint with its own secret is registered on public `https`, subscribed only to handled topics.
-- [ ] Raw-body signature verification, constant-time, every signature, timestamp window.
-- [ ] Event ids deduplicated atomically with fulfilment (shared store if several instances).
+- [ ] Standard Webhooks verification (`webhook-id`, `webhook-timestamp`, `webhook-signature`): raw body, base64-decoded key, constant-time, every entry, 5-minute window.
+- [ ] `webhook-id` deduplicated atomically with fulfilment (shared store if several instances).
 - [ ] Production ignores sandbox events; `amount` and `currency` are cross-checked.
 
 **Money**

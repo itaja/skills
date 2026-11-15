@@ -154,13 +154,22 @@ In the merchant dashboard. The URL must be public `https` (no cleartext, loopbac
 Nothing is published for that account. A missing event is usually a missing endpoint, not a delivery failure.
 
 **How do I verify a delivery?**
-HMAC-SHA256, base64, over `"<x-itaja-timestamp>.<raw body>"`, keyed with the raw secret string; compare in constant time; compare against **every** signature in the `v1,<a>,<b>` header (rotation windows carry several). A tested TypeScript implementation is in `itaja-webhooks`.
+Deliveries are signed with Standard Webhooks. Headers: `webhook-id`, `webhook-timestamp` (unix seconds), `webhook-signature`. The signature is HMAC-SHA256, base64, over `"<webhook-id>.<webhook-timestamp>.<raw body>"`; the key is the secret without `whsec_`, base64-decoded. Compare in constant time against **every** space-separated `v1,<base64>` entry (two for 24 hours after a rotation), and refuse a timestamp more than 5 minutes off. The official SDKs do it; a tested TypeScript implementation and a known answer are in `itaja-webhooks`.
 
 **Can I use a Standard Webhooks library?**
-No. Itaja deliberately keeps its own scheme: headers `x-itaja-signature` and `x-itaja-timestamp`, signed content `<timestamp>.<body>`. The Standard Webhooks scheme (`webhook-id` / `webhook-timestamp` / `webhook-signature`, signed `<id>.<timestamp>.<body>`) will not verify.
+Yes. Standard Webhooks is the only scheme Itaja uses, so any library for it verifies a delivery: `standardwebhooks` on npm and PyPI, and the ports listed on standardwebhooks.com. Give it the secret as issued, the raw body and the three `webhook-*` headers.
+
+**My handler reads `x-itaja-signature`. Does it still work?**
+No. That header and `x-itaja-timestamp` are no longer sent. Verify the `webhook-*` headers as described in `itaja-webhooks`.
+
+**Do I have to rotate my secret for Standard Webhooks?**
+No. Existing secrets stay valid, including the older `whsec_` + 48 hexadecimal characters form. Every secret is read the same way: strip `whsec_`, base64-decode the rest (never hex-decode it).
+
+**What is the `webhook-topic` header?**
+The event type, for routing or logs before the body is parsed. It is informational and not signed: act on the `type` of the verified body.
 
 **My signature check fails. What are the usual causes?**
-(1) A body parser changed the bytes — verify the raw body. (2) The `whsec_` prefix was stripped or the secret decoded; the key is the string as issued. (3) The secret belongs to another endpoint or environment. (4) The timestamp window rejects a skewed clock. (5) Only the first signature in the header was compared during a rotation.
+(1) A body parser changed the bytes — verify the raw body. (2) The secret string was used as the key; the key is the base64-decoded bytes of what follows `whsec_`. (3) The signed content lacks the `webhook-id`: it is `<id>.<timestamp>.<body>`. (4) The secret belongs to another endpoint or environment. (5) The timestamp window rejects a skewed clock. (6) Only the first entry of `webhook-signature` was compared during a rotation, or the entries were split on commas instead of spaces. (7) The code still reads the headers of the previous scheme.
 
 **Which events does Itaja really send?**
 `checkout.paid`; `invoice.paid`, `invoice.payment_failed`, `subscription.past_due`, `subscription.canceled`; nine `license.*` and five `credits.*` topics. `payment.*`, `client.*`, `subscription.created`, `.updated`, `.renewed` and `.payment_failed` appear in the dashboard picker but are **never emitted**: subscribing is accepted and never fires.
@@ -168,8 +177,8 @@ No. Itaja deliberately keeps its own scheme: headers `x-itaja-signature` and `x-
 **Does a sandbox checkout send webhooks?**
 Yes. Payment and billing events carry `"mode": "sandbox"`; `license.*` and `credits.*` carry no `mode`, so tell them apart by product id. Production code logs and ignores sandbox events. The dashboard's test deliveries are always `sandbox`.
 
-**Can I deduplicate on something other than the event id?**
-The id (`itaja_evt_…`) is the identity — it is derived from the transaction, so a retried publish of the same payment reuses it. Insert it with a unique constraint in the same transaction as the fulfilment.
+**What do I deduplicate on?**
+Deduplicate on the `webhook-id` header: a redelivery of the same message keeps it. Insert it with a unique constraint in the same transaction as the fulfilment.
 
 **What is the retry policy?**
 A non-`2xx` answer is redelivered; the schedule is not documented. Design for at-least-once delivery, answer quickly, answer `5xx` only when you want a redelivery, and reconcile from the API if you suspect a miss.
